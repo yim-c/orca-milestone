@@ -105,6 +105,17 @@ function sessionTabId(session, workspace, claimed = new Set()) {
 }
 
 /**
+ * What the focused workspace offers. With a tab selected, only that tab's agent may offer. With
+ * several agents and no tab selected, the one whose turn ended last, so the card shown is the newest.
+ */
+function nextOf(offers, path, activeTabId) {
+  const here = offers.filter(
+    (offer) => offer.path === path && (!activeTabId || offer.paneKey?.split(':')[0] === activeTabId)
+  )
+  return here.reduce((newest, offer) => (!newest || (offer.since ?? 0) > (newest.since ?? 0) ? offer : newest), null)
+}
+
+/**
  * @param workspace { path, displayName, agentStates, background, tabs, uniqueAgentTabs } of the focused workspace, or null
  * @param sessions  [{ listId, cwd, tabId, source, goal, tasks, updatedAt }] of every workspace, newest first
  * @param agents    [{ workspace, repo, path, focused, state, background, since }] Orca runs, one per Claude or Codex agent
@@ -144,12 +155,7 @@ export function buildModel(workspace, sessions, agents = [], offers = [], select
           ? workspace.background ? 'background' : 'idle'
           : 'none',
     sessions: mine,
-    // With a tab selected, only that tab's agent may offer; otherwise another tab's offer shows.
-    next:
-      offers.find(
-        (offer) =>
-          offer.path === workspace.path && (!activeTabId || offer.paneKey?.split(':')[0] === activeTabId)
-      ) ?? null,
+    next: nextOf(offers, workspace.path, activeTabId),
     others
   }
 }

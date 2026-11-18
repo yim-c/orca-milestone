@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { test } from 'node:test'
-import { createNextSender, nextOffer, parseSuggestions } from '../src/next-actions.mjs'
+import { createNextSender, nextOffer, offersOf, parseSuggestions } from '../src/next-actions.mjs'
 import { buildModel } from '../src/model.mjs'
 import { renderBody } from '../src/render.mjs'
 
@@ -113,4 +113,51 @@ test('the focused workspace shows its offer as cards, escaped, under its tasks',
   assert.ok(!elsewhere.includes('data-next'), 'only the focused workspace')
   const noTasks = renderBody(buildModel({ path: '/work/app', displayName: 'app', agentStates: ['done'] }, [], [], [offer]))
   assert.ok(noTasks.includes('data-next'), 'also without tasks')
+})
+
+test('with several agents each one that finished offers its own card, and a press reaches that agent only', async () => {
+  const first = agent({ paneKey: 'tab-1:leaf-1', stateStartedAt: 5, lastAssistantMessage: block([proposal({ prompt: 'for one' })]) })
+  const second = agent({ paneKey: 'tab-2:leaf-2', stateStartedAt: 9, lastAssistantMessage: block([proposal({ prompt: 'for two' })]) })
+  const working = agent({ paneKey: 'tab-3:leaf-3', state: 'working' })
+  const launch = async () => ({ sessionId: 'x', args: [] })
+
+  const offers = await offersOf([worktree([first, second, working])], { readLaunch: launch })
+  assert.deepEqual(offers.map((offer) => offer.paneKey), ['tab-1:leaf-1', 'tab-2:leaf-2'], 'the working one offers nothing')
+  assert.ok(offers.every((offer) => offer.suggestions.every((card) => card.action !== 'restart')), 'no restart: it finds its session by the folder')
+  assert.deepEqual(offers.map((offer) => offer.since), [5, 9])
+  assert.notEqual(offers[0].id, offers[1].id)
+
+  // A question asks for one agent; with two, the session behind the folder could be either.
+  const asking = await offersOf([worktree([agent({ state: 'waiting', toolName: 'AskUserQuestion' }), agent({ paneKey: 'tab-2:leaf-2', state: 'waiting' })])], { readQuestion: async () => ({ questions: [{ question: 'q', options: [{ label: 'a' }] }] }) })
+  assert.deepEqual(asking, [])
+
+  const calls = []
+  const send = createNextSender({
+    readOffers: async () => offers,
+    run: async (args) => {
+      calls.push(args)
+      if (args[1] === 'list') return { result: { terminals: [{ handle: 'h1', tabId: 'tab-1', leafId: 'leaf-1', writable: true }, { handle: 'h2', tabId: 'tab-2', leafId: 'leaf-2', writable: true }] } }
+      return { result: { send: { accepted: true }, terminal: { tail: [''] } } }
+    },
+    wait: async () => {}
+  })
+  assert.deepEqual(await send({ offer: offers[1].id, index: 0 }), { sent: true })
+  const sends = calls.filter((args) => args[1] === 'send')
+  assert.ok(sends.every((args) => args[args.indexOf('--terminal') + 1] === 'h2'))
+  assert.equal(sends.at(-1)[sends.at(-1).indexOf('--text') + 1], 'for two')
+})
+
+test('the panel shows the selected tab\'s card, and the newest one when no tab is selected', () => {
+  const tabbed = {
+    path: '/work/app',
+    displayName: 'app',
+    agentStates: ['done', 'done'],
+    tabs: [{ tabId: 'tab-1', title: 'A' }, { tabId: 'tab-2', title: 'B' }]
+  }
+  const old = { ...nextOffer(worktree([agent({ paneKey: 'tab-1:leaf', lastAssistantMessage: block([proposal({ label: 'OLD' })]) })])), since: 5 }
+  const fresh = { ...nextOffer(worktree([agent({ paneKey: 'tab-2:leaf', lastAssistantMessage: block([proposal({ label: 'FRESH' })]) })])), since: 9 }
+  const shown = (tabId) => renderBody(buildModel(tabbed, [], [], [old, fresh], tabId))
+  assert.ok(shown(null).includes('FRESH') && !shown(null).includes('OLD'))
+  assert.ok(shown('tab-1').includes('OLD') && !shown('tab-1').includes('FRESH'))
+  assert.ok(shown('tab-2').includes('FRESH'))
 })

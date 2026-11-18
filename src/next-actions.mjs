@@ -96,11 +96,15 @@ export function parseSuggestions(message) {
  * The one live main agent of a workspace, or null. With two, a card could reach another agent
  * than the one shown. Orca keeps the record of a pane that has closed, without hasLivePty.
  */
-function soleAgent(worktree) {
-  if (worktree.isArchived) return null
-  const agents = (worktree.agents ?? []).filter(
+function liveAgents(worktree) {
+  if (worktree.isArchived) return []
+  return (worktree.agents ?? []).filter(
     (agent) => TRACKED_AGENTS.has(agent.agentType) && !agent.parentPaneKey && (agent.hasLivePty === true || agent.hasLivePty === null)
   )
+}
+
+function soleAgent(worktree) {
+  const agents = liveAgents(worktree)
   return agents.length === 1 ? agents[0] : null
 }
 
@@ -122,7 +126,11 @@ const RESTART_CARD = { label: '最新の指示で再開', action: 'restart', det
  */
 export function nextOffer(worktree, launch = null) {
   const agent = soleAgent(worktree)
-  if (agent?.state !== 'done') return null
+  return agent ? proposalOf(worktree, agent, launch) : null
+}
+
+function proposalOf(worktree, agent, launch = null) {
+  if (agent.state !== 'done') return null
   const suggestions = parseSuggestions(agent.lastAssistantMessage)
   const restart = launch && agent.agentType === 'claude' && !agent.background
   if (restart) suggestions.push(RESTART_CARD)
@@ -330,6 +338,16 @@ async function codexPermissionOffer(worktree, readPane) {
 export async function offersOf(worktrees, { readQuestion = async () => null, readCall = async () => null, readPane = async () => null, readLaunch = async () => null, readLaunchInfo = async () => null, readAllowed = async () => [] } = {}) {
   const offers = []
   for (const worktree of worktrees) {
+    // With several agents, each one's proposal is its own card: it is sent to the pane it names. A
+    // question, a permission and a restart find their session by the folder, so they stay for one agent.
+    const agents = liveAgents(worktree)
+    if (agents.length > 1) {
+      for (const agent of agents) {
+        const proposal = proposalOf(worktree, agent)
+        if (proposal) offers.push({ ...proposal, since: agent.stateStartedAt ?? 0 })
+      }
+      continue
+    }
     const offer =
       nextOffer(worktree, await launchOf(worktree, readLaunch)) ??
       (await questionOffer(worktree, readQuestion)) ??
