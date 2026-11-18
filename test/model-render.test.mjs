@@ -206,3 +206,38 @@ test('tab bar renders when multiple tabs exist and filters sessions by tabId', (
   assert.equal(single.tabs.length, 0)
   assert.ok(!renderBody(single).includes('<nav class="tabs"'))
 })
+
+test('a list without its own tab does not fall onto a tab another list already owns', () => {
+  const tabbedWorkspace = {
+    ...workspace,
+    tabs: [
+      { tabId: 'tab-1', title: 'Current' },
+      { tabId: 'tab-2', title: 'Old' }
+    ],
+    // The old agent is not counted as a main agent, so tab-1 looks like the only Claude tab.
+    uniqueAgentTabs: { claude: 'tab-1', mcp: null }
+  }
+  const sessions = [
+    { listId: 'now', cwd: '/work/app', source: 'claude', tabId: 'tab-1', goal: 'Now', tasks: [task(1, 'a', 'in_progress')] },
+    { listId: 'old', cwd: '/work/app', source: 'claude', tabId: null, goal: 'Old', tasks: [task(1, 'b', 'completed')] }
+  ]
+  const tab1 = buildModel(tabbedWorkspace, sessions, [], [], 'tab-1')
+  assert.deepEqual(tab1.sessions.map((s) => s.listId), ['now'])
+})
+
+test('next offer follows the selected tab', () => {
+  const tabbedWorkspace = {
+    ...workspace,
+    tabs: [
+      { tabId: 'tab-1', title: 'A' },
+      { tabId: 'tab-2', title: 'B' }
+    ]
+  }
+  const offers = [
+    { kind: 'next', id: 'o2', path: workspace.path, paneKey: 'tab-2:leaf' },
+    { kind: 'next', id: 'o1', path: workspace.path, paneKey: 'tab-1:leaf' }
+  ]
+  assert.equal(buildModel(tabbedWorkspace, [], [], offers, 'tab-1').next.id, 'o1')
+  assert.equal(buildModel(tabbedWorkspace, [], [], [offers[0]], 'tab-1').next, null)
+  assert.equal(buildModel(tabbedWorkspace, [], [], offers).next.id, 'o2')
+})

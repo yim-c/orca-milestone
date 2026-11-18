@@ -96,10 +96,12 @@ function buildOthers(agents, sessions, workspacePaths) {
   }
 }
 
-function sessionTabId(session, workspace) {
+// `claimed` holds the tabs that another session already owns by an explicit mapping; a session
+// without its own tab must not fall back onto them (it is an older list, not that tab's agent).
+function sessionTabId(session, workspace, claimed = new Set()) {
   if (session.tabId) return session.tabId
   const fallback = session.source === 'mcp' ? workspace.uniqueAgentTabs?.mcp : workspace.uniqueAgentTabs?.claude
-  return fallback ?? null
+  return fallback && !claimed.has(fallback) ? fallback : null
 }
 
 /**
@@ -118,8 +120,9 @@ export function buildModel(workspace, sessions, agents = [], offers = [], select
   const workspaceSessions = sessions
     .filter((session) => session.cwd && ownerWorkspacePath(session.cwd, workspacePaths) === workspace.path)
     .filter((session) => session.tasks.length > 0)
+  const claimed = new Set(workspaceSessions.map((session) => session.tabId).filter(Boolean))
   const mine = (activeTabId
-    ? workspaceSessions.filter((session) => sessionTabId(session, workspace) === activeTabId)
+    ? workspaceSessions.filter((session) => sessionTabId(session, workspace, claimed) === activeTabId)
     : workspaceSessions
   )
     .slice(0, MAX_SESSIONS)
@@ -138,7 +141,12 @@ export function buildModel(workspace, sessions, agents = [], offers = [], select
           ? workspace.background ? 'background' : 'idle'
           : 'none',
     sessions: mine,
-    next: offers.find((offer) => offer.path === workspace.path) ?? null,
+    // With a tab selected, only that tab's agent may offer; otherwise another tab's offer shows.
+    next:
+      offers.find(
+        (offer) =>
+          offer.path === workspace.path && (!activeTabId || offer.paneKey?.split(':')[0] === activeTabId)
+      ) ?? null,
     others
   }
 }
