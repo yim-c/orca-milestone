@@ -6,6 +6,7 @@ import { JSDOM } from 'jsdom'
 import { scrollExpandedRows } from '../panel/expand.mjs'
 import { openOnPress } from '../panel/open.mjs'
 import { patchChildren } from '../panel/patch.mjs'
+import { refreshOnPress } from '../panel/refresh.mjs'
 import { selectTabOnPress } from '../panel/tabs.mjs'
 
 const panelDir = join(import.meta.dirname, '..', 'panel')
@@ -200,4 +201,26 @@ test('pressing a tab pill selects that tab or clears the filter for all', () => 
   root.querySelector('[data-tab="tab-2"]').click()
   root.querySelector('[data-tab=""]').click()
   assert.deepEqual(selected, ['tab-2', null])
+})
+
+test('pressing the refresh button spins while running and ignores double clicks until done', async () => {
+  const root = body('<header><h1>app</h1><button type="button" class="refresh" data-refresh>↻</button></header>')
+  let finish
+  let calls = 0
+  refreshOnPress(root, () => {
+    calls += 1
+    return new Promise((resolve) => {
+      finish = resolve
+    })
+  })
+  const button = root.querySelector('[data-refresh]')
+  button.click()
+  button.click()
+  assert.equal(calls, 1)
+  assert.ok(button.disabled)
+  assert.ok(button.classList.contains('spinning'))
+  finish()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  assert.equal(button.disabled, false)
+  assert.ok(!button.classList.contains('spinning'))
 })

@@ -157,12 +157,15 @@ function renderTabs(tabs, selectedTabId) {
   return `<nav class="tabs" aria-label="ターミナルタブ">${all}${items.join('')}</nav>`
 }
 
+const REFRESH_ICON = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.4-3.67"/><path d="M13.5 2.5v3h-3"/></svg>'
+
 function renderFocused(model) {
   if (model.kind === 'no-workspace') {
     return '<p class="empty">ワークスペースを開くと、エージェントの進捗をここに表示します。</p>'
   }
   const agent = AGENT_LABELS[model.agent] ?? ''
-  const header = `<header><h1>${escape(model.workspace)}</h1><span class="agent ${model.agent}">${agent}</span></header>${renderTabs(model.tabs, model.selectedTabId)}`
+  const refresh = `<button type="button" class="refresh" data-refresh title="更新" aria-label="更新">${REFRESH_ICON}</button>`
+  const header = `<header><h1>${escape(model.workspace)}</h1><div class="meta"><span class="agent ${model.agent}">${agent}</span>${refresh}</div></header>${renderTabs(model.tabs, model.selectedTabId)}`
   if (model.kind === 'no-tasks') {
     const empty = model.selectedTabId
       ? 'このタブのエージェントはまだタスクを作っていません。'

@@ -6,6 +6,7 @@ import { scrollExpandedRows } from './expand.mjs'
 import { sendOnPress } from './next.mjs'
 import { openOnPress } from './open.mjs'
 import { patchChildren } from './patch.mjs'
+import { refreshOnPress } from './refresh.mjs'
 import { selectTabOnPress } from './tabs.mjs'
 
 const RETRY_MS = 3000
@@ -53,6 +54,11 @@ selectTabOnPress(document.body, (tabId) => {
     console.warn(`milestone: tab.select failed: ${error.code ?? error.message}`)
   })
 })
+refreshOnPress(document.body, () =>
+  plugin.request('view.refresh').catch((error) => {
+    console.warn(`milestone: view.refresh failed: ${error.code ?? error.message}`)
+  })
+)
 
 
 void load()

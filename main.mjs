@@ -17,6 +17,11 @@ export default function activate(orca) {
     createLaunchHook({ execPath: process.execPath, serverPath: join(import.meta.dirname, 'src', 'progress-server.mjs') })
   )
   orca.panels.handle('view.get', () => worker.view())
+  orca.panels.handle('view.refresh', async () => {
+    await worker.start()
+    await worker.refresh(true)
+    return { refreshed: true }
+  })
   orca.panels.handle('workspace.open', ({ path }) => worker.openWorkspace(path))
   orca.panels.handle('next.send', (request) => worker.sendNext(request))
   orca.panels.handle('tab.select', ({ tabId } = {}) => worker.selectTab(tabId))
