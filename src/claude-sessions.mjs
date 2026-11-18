@@ -4,6 +4,7 @@
 // A plain session names its list by its session id. A session that leads an agent team
 // (`claude --teammate-mode`, which Orca's Agent Teams launch uses) names it after the team,
 // `session-<first 8 hex of the session id>`.
+import { execFile } from 'node:child_process'
 import { createReadStream } from 'node:fs'
 import { open, readdir, readFile, stat } from 'node:fs/promises'
 import { createInterface } from 'node:readline'
@@ -64,6 +65,55 @@ export async function readRunningSessionIds(sessionsRoot) {
     }
   }
   return ids
+}
+
+const TAB_ENV = /(?:^|\s)ORCA_TAB_ID=(\S+)/
+
+/**
+ * The Orca tab a process runs in, or null. `ps eww` prints a process's environment after its command,
+ * and Orca puts the tab in ORCA_TAB_ID. The environment holds tokens too, so only that value is kept.
+ */
+export function readProcessTab(pid) {
+  return new Promise((resolve) => {
+    execFile('ps', ['eww', '-p', String(pid), '-o', 'command='], { timeout: 3000, maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
+      resolve(error ? null : (TAB_ENV.exec(stdout)?.[1] ?? null))
+    })
+  })
+}
+
+/**
+ * The Orca tab of every running session, by session id. A process keeps its tab for life, so each is
+ * asked once; `cache` holds the answers by pid and start time and drops the processes that are gone.
+ */
+export async function readSessionTabs(sessionsRoot, cache = new Map(), readTab = readProcessTab) {
+  let names
+  try {
+    names = await readdir(sessionsRoot)
+  } catch {
+    return new Map()
+  }
+  const tabs = new Map()
+  const seen = new Set()
+  for (const name of names) {
+    if (!/^\d+\.json$/.test(name)) continue
+    const entry = await readJson(join(sessionsRoot, name))
+    if (!entry || !isSessionId(entry.sessionId) || !Number.isInteger(entry.pid) || !isRunning(entry.pid)) continue
+    const key = `${entry.pid}:${entry.startedAt ?? ''}`
+    seen.add(key)
+    if (!cache.has(key)) cache.set(key, await readTab(entry.pid))
+    if (cache.get(key)) tabs.set(entry.sessionId, cache.get(key))
+  }
+  for (const key of cache.keys()) if (!seen.has(key)) cache.delete(key)
+  return tabs
+}
+
+/** The tab of a list's session; a team's list is named by the id prefix of its lead's session. */
+export function tabOfList(listId, tabs) {
+  if (tabs.has(listId)) return tabs.get(listId)
+  const prefix = TEAM_LIST_ID.exec(listId)?.[1]
+  if (!prefix) return null
+  for (const [sessionId, tabId] of tabs) if (sessionId.startsWith(`${prefix}-`)) return tabId
+  return null
 }
 
 /** Whether the session that owns a task list (by its id, or a team's id prefix) is running. */

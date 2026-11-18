@@ -9,8 +9,11 @@ import {
   findListTranscript,
   currentGoal,
   isListRunning,
+  readProcessTab,
   readRunningSessionIds,
+  readSessionTabs,
   readTasksFromTranscript,
+  tabOfList,
   listRecentTaskLists,
   readPromptBeforeTask,
   readTaskList,
@@ -43,6 +46,7 @@ export function createMilestoneWorker({
   readOrca = readWorkspaces,
   runCli = runOrca,
   now = Date.now,
+  readTab = readProcessTab,
   watchDir = (dir, onChange) => watch(dir, { recursive: true }, onChange)
 }) {
   const paths = claudePaths(home)
@@ -84,8 +88,10 @@ export function createMilestoneWorker({
   let rerun = false
   // The last state heard per pane. Agents repeat a state with every hook they fire.
   const paneStates = new Map()
-  // Maps a Claude sessionId (or listId) to the Orca tabId seen on agent.status.changed.
+  // Maps a Claude sessionId (or listId) to the Orca tabId seen on agent.status.changed. It is the
+  // fallback for what the process environment says, which needs no event and survives a restart.
   const sessionTabs = new Map()
+  const processTabs = new Map()
   let lastSessions = []
   let selectedTabId = null
 
@@ -139,6 +145,7 @@ export function createMilestoneWorker({
 
   async function allSessions() {
     const running = await readRunningSessionIds(paths.sessionsRoot)
+    const tabsBySession = await readSessionTabs(paths.sessionsRoot, processTabs, readTab)
     const lists = await listRecentTaskLists(tasksRoot, { maxAgeMs: TASK_LIST_MAX_AGE_MS })
     const sessions = []
     for (const list of lists) {
@@ -158,7 +165,7 @@ export function createMilestoneWorker({
       sessions.push({
         ...list,
         cwd: head.cwd,
-        tabId: sessionTabs.get(list.listId) ?? null,
+        tabId: tabOfList(list.listId, tabsBySession) ?? sessionTabs.get(list.listId) ?? null,
         source: 'claude',
         ...(await goalOf(list.listId, head, tasks))
       })
