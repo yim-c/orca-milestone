@@ -7,6 +7,28 @@ export function isInside(path, root) {
   return path === root || path.startsWith(root.endsWith('/') ? root : `${root}/`)
 }
 
+function normalizeRoot(root) {
+  return root.length > 1 ? root.replace(/\/+$/, '') : root
+}
+
+/**
+ * Picks the most specific workspace root containing `cwd` so a parent folder workspace
+ * (e.g. a home directory) does not claim sessions running in nested project workspaces.
+ */
+function ownerWorkspacePath(cwd, workspacePaths) {
+  let best = null
+  let bestLen = -1
+  for (const root of workspacePaths) {
+    if (!root || !isInside(cwd, root)) continue
+    const len = normalizeRoot(root).length
+    if (len > bestLen) {
+      best = root
+      bestLen = len
+    }
+  }
+  return best
+}
+
 function progress(tasks) {
   const visible = tasks.filter((task) => task.status !== 'deleted')
   const done = visible.filter((task) => task.status === 'completed').length
@@ -22,7 +44,7 @@ const NEEDS_USER = new Set(['waiting', 'blocked', 'permission'])
  * shown in full above. Whether Claude is at work flips every turn, so it shows on a row but does
  * not decide which rows show or their order, which would make them jump.
  */
-function buildOthers(agents, sessions) {
+function buildOthers(agents, sessions, workspacePaths) {
   const byWorkspace = new Map()
   for (const agent of agents) {
     const entry = byWorkspace.get(agent.path) ?? { ...agent, needsUser: false, working: false, background: false, since: 0 }
@@ -35,7 +57,9 @@ function buildOthers(agents, sessions) {
     byWorkspace.set(agent.path, entry)
   }
   const rows = [...byWorkspace.values()].map((entry) => {
-    const session = sessions.find((s) => s.cwd && s.tasks.length > 0 && isInside(s.cwd, entry.path))
+    const session = sessions.find(
+      (s) => s.cwd && s.tasks.length > 0 && ownerWorkspacePath(s.cwd, workspacePaths) === entry.path
+    )
     const counts = session ? progress(session.tasks) : { done: 0, total: 0, tasks: [] }
     return {
       workspace: entry.workspace,
@@ -79,10 +103,11 @@ function buildOthers(agents, sessions) {
  * @param offers    [{ kind, id, path, ... }] what agents offer to choose from, see next-actions.mjs
  */
 export function buildModel(workspace, sessions, agents = [], offers = []) {
-  const others = buildOthers(agents, sessions)
+  const workspacePaths = [...new Set([workspace?.path, ...agents.map((agent) => agent.path)].filter(Boolean))]
+  const others = buildOthers(agents, sessions, workspacePaths)
   if (!workspace) return { kind: 'no-workspace', others }
   const mine = sessions
-    .filter((session) => session.cwd && isInside(session.cwd, workspace.path))
+    .filter((session) => session.cwd && ownerWorkspacePath(session.cwd, workspacePaths) === workspace.path)
     .filter((session) => session.tasks.length > 0)
     .slice(0, MAX_SESSIONS)
     .map((session) => ({ listId: session.listId, goal: session.goal, ...progress(session.tasks) }))

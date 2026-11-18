@@ -142,3 +142,30 @@ test('an agent waiting while its shells run in the background says so, here and 
   assert.equal(model.others.rows[0].background, true)
   assert.ok(renderBody(model).includes('<span class="background">裏で実行中</span>'))
 })
+
+test('a parent workspace does not claim sessions belonging to a nested child workspace', () => {
+  const parent = { path: '/Users/dev', displayName: 'dev', agentStates: ['done'] }
+  const sessions = [
+    { listId: 'child-list', cwd: '/Users/dev/orca/app/sub', goal: 'Child goal', updatedAt: 20, tasks: [task(1, 'child task', 'in_progress')] },
+    { listId: 'parent-list', cwd: '/Users/dev/notes', goal: 'Parent goal', updatedAt: 10, tasks: [task(1, 'parent task', 'pending')] }
+  ]
+  const agents = [
+    { workspace: 'dev', repo: null, path: '/Users/dev', focused: true, state: 'done', since: 1 },
+    { workspace: 'app', repo: 'app', path: '/Users/dev/orca/app', focused: false, state: 'working', since: 2 }
+  ]
+  const model = buildModel(parent, sessions, agents)
+  assert.deepEqual(model.sessions.map((s) => s.listId), ['parent-list'])
+  assert.deepEqual(
+    model.others.rows.map((r) => [r.workspace, r.done, r.total, r.goal]),
+    [['app', 0, 1, 'Child goal']]
+  )
+
+  // When the child workspace is focused, the parent in others does not steal the child's session either.
+  const childFocused = buildModel(
+    { path: '/Users/dev/orca/app', displayName: 'app', agentStates: ['working'] },
+    [sessions[0]],
+    agents.map((a) => ({ ...a, focused: a.path === '/Users/dev/orca/app' }))
+  )
+  assert.deepEqual(childFocused.sessions.map((s) => s.listId), ['child-list'])
+  assert.equal(childFocused.others.rows.length, 0)
+})
