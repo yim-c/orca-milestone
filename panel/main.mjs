@@ -6,6 +6,7 @@ import { scrollExpandedRows } from './expand.mjs'
 import { sendOnPress } from './next.mjs'
 import { openOnPress } from './open.mjs'
 import { patchChildren } from './patch.mjs'
+import { selectTabOnPress } from './tabs.mjs'
 
 const RETRY_MS = 3000
 // Orca stops a worker after 5 minutes without any call.
@@ -45,6 +46,11 @@ scrollExpandedRows(document.body)
 openOnPress(document.body, (path) => {
   plugin.request('workspace.open', { path }).catch((error) => {
     console.warn(`milestone: workspace.open failed: ${error.code ?? error.message}`)
+  })
+})
+selectTabOnPress(document.body, (tabId) => {
+  plugin.request('tab.select', { tabId }).catch((error) => {
+    console.warn(`milestone: tab.select failed: ${error.code ?? error.message}`)
   })
 })
 

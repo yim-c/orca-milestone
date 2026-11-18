@@ -26,12 +26,12 @@ export async function readCodexProgress(dir, { running = isRunning } = {}) {
       .map(async (name) => {
         const file = join(dir, name)
         try {
-          const { pid, cwd, goal, updatedAt, tasks } = JSON.parse(await readFile(file, 'utf8'))
+          const { pid, cwd, tabId = null, goal, updatedAt, tasks } = JSON.parse(await readFile(file, 'utf8'))
           if (!running(pid)) {
             await rm(file, { force: true })
             return null
           }
-          return { listId: name.slice(0, -'.json'.length), cwd, goal, updatedAt, tasks }
+          return { listId: name.slice(0, -'.json'.length), cwd, tabId, source: 'mcp', goal, updatedAt, tasks }
         } catch {
           return null
         }

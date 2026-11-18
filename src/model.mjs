@@ -96,25 +96,40 @@ function buildOthers(agents, sessions, workspacePaths) {
   }
 }
 
+function sessionTabId(session, workspace) {
+  if (session.tabId) return session.tabId
+  const fallback = session.source === 'mcp' ? workspace.uniqueAgentTabs?.mcp : workspace.uniqueAgentTabs?.claude
+  return fallback ?? null
+}
+
 /**
- * @param workspace { path, displayName, agentStates, background } of the focused workspace, or null
- * @param sessions  [{ listId, cwd, goal, tasks, updatedAt }] of every workspace, newest first
+ * @param workspace { path, displayName, agentStates, background, tabs, uniqueAgentTabs } of the focused workspace, or null
+ * @param sessions  [{ listId, cwd, tabId, source, goal, tasks, updatedAt }] of every workspace, newest first
  * @param agents    [{ workspace, repo, path, focused, state, background, since }] Orca runs, one per Claude or Codex agent
  * @param offers    [{ kind, id, path, ... }] what agents offer to choose from, see next-actions.mjs
+ * @param selectedTabId optional Orca tabId to filter the focused workspace's sessions
  */
-export function buildModel(workspace, sessions, agents = [], offers = []) {
+export function buildModel(workspace, sessions, agents = [], offers = [], selectedTabId = null) {
   const workspacePaths = [...new Set([workspace?.path, ...agents.map((agent) => agent.path)].filter(Boolean))]
   const others = buildOthers(agents, sessions, workspacePaths)
   if (!workspace) return { kind: 'no-workspace', others }
-  const mine = sessions
+  const tabs = workspace.tabs ?? []
+  const activeTabId = selectedTabId && tabs.some((tab) => tab.tabId === selectedTabId) ? selectedTabId : null
+  const workspaceSessions = sessions
     .filter((session) => session.cwd && ownerWorkspacePath(session.cwd, workspacePaths) === workspace.path)
     .filter((session) => session.tasks.length > 0)
+  const mine = (activeTabId
+    ? workspaceSessions.filter((session) => sessionTabId(session, workspace) === activeTabId)
+    : workspaceSessions
+  )
     .slice(0, MAX_SESSIONS)
     .map((session) => ({ listId: session.listId, goal: session.goal, ...progress(session.tasks) }))
   const states = workspace.agentStates ?? []
   return {
     kind: mine.length > 0 ? 'sessions' : 'no-tasks',
     workspace: workspace.displayName,
+    tabs: tabs.length > 1 ? tabs : [],
+    selectedTabId: tabs.length > 1 ? activeTabId : null,
     agent: states.includes('working')
       ? 'working'
       : states.includes('blocked') || states.includes('waiting')

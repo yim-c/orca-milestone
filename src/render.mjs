@@ -147,14 +147,27 @@ export function renderBody(model) {
   return `<main>${renderFocused(model)}</main>${renderOthers(model.others)}`
 }
 
+function renderTabs(tabs, selectedTabId) {
+  if (!tabs || tabs.length < 2) return ''
+  const all = `<button type="button" class="tab${selectedTabId === null ? ' active' : ''}" data-tab="" aria-pressed="${selectedTabId === null}">すべて</button>`
+  const items = tabs.map((tab) => {
+    const active = selectedTabId === tab.tabId
+    return `<button type="button" class="tab${active ? ' active' : ''}" data-tab="${escape(tab.tabId)}" aria-pressed="${active}">${escape(clip(tab.title, 28))}</button>`
+  })
+  return `<nav class="tabs" aria-label="ターミナルタブ">${all}${items.join('')}</nav>`
+}
+
 function renderFocused(model) {
   if (model.kind === 'no-workspace') {
     return '<p class="empty">ワークスペースを開くと、エージェントの進捗をここに表示します。</p>'
   }
   const agent = AGENT_LABELS[model.agent] ?? ''
-  const header = `<header><h1>${escape(model.workspace)}</h1><span class="agent ${model.agent}">${agent}</span></header>`
+  const header = `<header><h1>${escape(model.workspace)}</h1><span class="agent ${model.agent}">${agent}</span></header>${renderTabs(model.tabs, model.selectedTabId)}`
   if (model.kind === 'no-tasks') {
-    return `${header}<p class="empty">このワークスペースのエージェントはまだタスクを作っていません。</p>${renderNext(model.next)}`
+    const empty = model.selectedTabId
+      ? 'このタブのエージェントはまだタスクを作っていません。'
+      : 'このワークスペースのエージェントはまだタスクを作っていません。'
+    return `${header}<p class="empty">${empty}</p>${renderNext(model.next)}`
   }
   return header + model.sessions.map(renderSession).join('') + renderNext(model.next)
 }

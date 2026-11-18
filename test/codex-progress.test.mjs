@@ -36,6 +36,8 @@ test('a recorded plan is read back as a list while its session runs', async () =
     {
       listId: 'codex-4242',
       cwd: '/work/app',
+      tabId: null,
+      source: 'mcp',
       goal: 'Ship',
       updatedAt: 1000,
       tasks: [
@@ -44,6 +46,14 @@ test('a recorded plan is read back as a list while its session runs', async () =
       ]
     }
   ])
+})
+
+test('a recorded plan keeps the Orca tabId when provided', async () => {
+  const ctx = { ...(await context()), tabId: 'tab-42' }
+  handleMessage(call({ goal: 'Ship', tasks: [{ subject: 'Step', status: 'pending' }] }), ctx)
+  const lists = await readCodexProgress(ctx.dir, { running: (pid) => pid === 4242 })
+  assert.equal(lists[0].tabId, 'tab-42')
+  assert.equal(lists[0].source, 'mcp')
 })
 
 test('a list of an ended session goes away with its file, and a broken file is skipped', async () => {

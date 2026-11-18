@@ -84,6 +84,10 @@ export function createMilestoneWorker({
   let rerun = false
   // The last state heard per pane. Agents repeat a state with every hook they fire.
   const paneStates = new Map()
+  // Maps a Claude sessionId (or listId) to the Orca tabId seen on agent.status.changed.
+  const sessionTabs = new Map()
+  let lastSessions = []
+  let selectedTabId = null
 
   async function headOf(listId) {
     if (heads.has(listId)) return heads.get(listId)
@@ -151,7 +155,13 @@ export function createMilestoneWorker({
       if (tasks.length === 0) continue
       const head = await headOf(list.listId)
       if (!head?.cwd) continue
-      sessions.push({ ...list, cwd: head.cwd, ...(await goalOf(list.listId, head, tasks)) })
+      sessions.push({
+        ...list,
+        cwd: head.cwd,
+        tabId: sessionTabs.get(list.listId) ?? null,
+        source: 'claude',
+        ...(await goalOf(list.listId, head, tasks))
+      })
     }
     sessions.push(...(await readCodexProgress(progressRoot)))
     return sessions.sort((a, b) => b.updatedAt - a.updatedAt)
@@ -196,7 +206,15 @@ export function createMilestoneWorker({
     }
   }
 
+  function publishModel() {
+    if (selectedTabId && !workspace?.tabs?.some((tab) => tab.tabId === selectedTabId)) {
+      selectedTabId = null
+    }
+    publish(renderBody(buildModel(workspace, lastSessions, agents, offers, selectedTabId)))
+  }
+
   async function refreshOnce(askOrca) {
+    const previousPath = workspace?.path ?? null
     if (askOrca || !workspace) {
       try {
         let found
@@ -206,8 +224,15 @@ export function createMilestoneWorker({
         orca.log(`milestone: could not read the workspaces: ${error.message}`)
       }
     }
-    const sessions = await allSessions()
-    publish(renderBody(buildModel(workspace, sessions, agents, offers)))
+    if ((workspace?.path ?? null) !== previousPath) selectedTabId = null
+    lastSessions = await allSessions()
+    publishModel()
+  }
+
+  function selectTab(tabId) {
+    selectedTabId = typeof tabId === 'string' && tabId ? tabId : null
+    publishModel()
+    return { selectedTabId }
   }
 
   /** Runs refreshes one at a time; a request during a run starts one more afterwards. */
@@ -261,9 +286,15 @@ export function createMilestoneWorker({
     timer = setTimeout(() => void refresh(), DEBOUNCE_MS)
   }
 
-  function agentChanged({ paneKey, state, mainAgent }) {
+  function agentChanged({ paneKey, state, mainAgent, sessionId }) {
+    const tabId = paneKey?.split(':')[0]
+    let tabMapped = false
+    if (sessionId && tabId && sessionTabs.get(sessionId) !== tabId) {
+      sessionTabs.set(sessionId, tabId)
+      tabMapped = true
+    }
     const key = `${state}\n${mainAgent?.state ?? ''}`
-    if (paneStates.get(paneKey) === key) return
+    if (!tabMapped && paneStates.get(paneKey) === key) return
     paneStates.set(paneKey, key)
     schedule(true)
   }
@@ -282,5 +313,5 @@ export function createMilestoneWorker({
     return started
   }
 
-  return { start, refresh, schedule, agentChanged, view, openWorkspace, sendNext }
+  return { start, refresh, schedule, agentChanged, view, openWorkspace, sendNext, selectTab }
 }

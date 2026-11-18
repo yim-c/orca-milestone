@@ -6,6 +6,7 @@ import { JSDOM } from 'jsdom'
 import { scrollExpandedRows } from '../panel/expand.mjs'
 import { openOnPress } from '../panel/open.mjs'
 import { patchChildren } from '../panel/patch.mjs'
+import { selectTabOnPress } from '../panel/tabs.mjs'
 
 const panelDir = join(import.meta.dirname, '..', 'panel')
 
@@ -190,4 +191,13 @@ test('a card that just came in the place of the answered one takes no presses fo
   root.querySelectorAll('[data-next]')[1].click()
   await flush()
   assert.deepEqual(requests[1], { offer: 'second', index: 1 })
+})
+
+test('pressing a tab pill selects that tab or clears the filter for all', () => {
+  const root = body('<nav class="tabs"><button class="tab active" data-tab="">すべて</button><button class="tab" data-tab="tab-2">Tab 2</button></nav>')
+  const selected = []
+  selectTabOnPress(root, (tabId) => selected.push(tabId))
+  root.querySelector('[data-tab="tab-2"]').click()
+  root.querySelector('[data-tab=""]').click()
+  assert.deepEqual(selected, ['tab-2', null])
 })

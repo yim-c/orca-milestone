@@ -169,3 +169,40 @@ test('a parent workspace does not claim sessions belonging to a nested child wor
   assert.deepEqual(childFocused.sessions.map((s) => s.listId), ['child-list'])
   assert.equal(childFocused.others.rows.length, 0)
 })
+
+test('tab bar renders when multiple tabs exist and filters sessions by tabId', () => {
+  const tabbedWorkspace = {
+    ...workspace,
+    tabs: [
+      { tabId: 'tab-1', title: 'Claude Fix' },
+      { tabId: 'tab-2', title: 'Codex Test' }
+    ],
+    uniqueAgentTabs: { claude: 'tab-1', mcp: 'tab-2' }
+  }
+  const sessions = [
+    { listId: 's1', cwd: '/work/app', source: 'claude', tabId: null, goal: 'Claude goal', tasks: [task(1, 'c1', 'in_progress')] },
+    { listId: 's2', cwd: '/work/app', source: 'mcp', tabId: 'tab-2', goal: 'Codex goal', tasks: [task(1, 'm1', 'pending')] }
+  ]
+
+  const all = buildModel(tabbedWorkspace, sessions)
+  assert.deepEqual(all.sessions.map((s) => s.listId), ['s1', 's2'])
+  const allHtml = renderBody(all)
+  assert.ok(allHtml.includes('<nav class="tabs"'))
+  assert.ok(allHtml.includes('data-tab=""'))
+  assert.ok(allHtml.includes('data-tab="tab-1"'))
+  assert.ok(allHtml.includes('data-tab="tab-2"'))
+
+  // Tab 1 uses uniqueAgentTabs.claude fallback when session.tabId is null.
+  const tab1 = buildModel(tabbedWorkspace, sessions, [], [], 'tab-1')
+  assert.deepEqual(tab1.sessions.map((s) => s.listId), ['s1'])
+  assert.equal(tab1.selectedTabId, 'tab-1')
+
+  // Tab 2 filters to s2.
+  const tab2 = buildModel(tabbedWorkspace, sessions, [], [], 'tab-2')
+  assert.deepEqual(tab2.sessions.map((s) => s.listId), ['s2'])
+
+  // A single-tab workspace does not render the tab bar.
+  const single = buildModel({ ...workspace, tabs: [{ tabId: 'tab-1', title: 'Only' }] }, sessions)
+  assert.equal(single.tabs.length, 0)
+  assert.ok(!renderBody(single).includes('<nav class="tabs"'))
+})

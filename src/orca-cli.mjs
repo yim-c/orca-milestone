@@ -98,8 +98,30 @@ export async function settleAgents(worktrees, readTurnEnded) {
   return settled
 }
 
+function tabsOf(worktree, terminals) {
+  const seen = new Map()
+  for (const terminal of terminals ?? []) {
+    if (terminal.worktreePath !== worktree.path || !terminal.tabId || seen.has(terminal.tabId)) continue
+    seen.set(terminal.tabId, { tabId: terminal.tabId, title: terminal.title || 'Terminal' })
+  }
+  return [...seen.values()]
+}
+
+function uniqueTab(agents) {
+  const tabs = new Set(agents.map((agent) => agent.paneKey?.split(':')[0]).filter(Boolean))
+  return tabs.size === 1 ? [...tabs][0] : null
+}
+
+function uniqueAgentTabs(worktree) {
+  const agents = mainAgents(worktree)
+  return {
+    claude: uniqueTab(agents.filter((agent) => agent.agentType === 'claude')),
+    mcp: uniqueTab(agents.filter((agent) => agent.agentType !== 'claude'))
+  }
+}
+
 /**
- * The focused workspace ({ path, displayName, agentStates, background }, or null), the main agents of every
+ * The focused workspace ({ path, displayName, agentStates, background, tabs, uniqueAgentTabs }, or null), the main agents of every
  * workspace that is not archived, and what each agent offers to choose from: its proposed next
  * steps, its question or the tool waiting for permission. Of the prompts and replies, only the
  * block an agent wrote for those buttons is kept.
@@ -113,7 +135,9 @@ export async function readWorkspaces(cli, run = runOrca, readers = {}) {
   }
   const { readTurnEnded = async () => null, readTerminals = async () => (await run(cli, ['terminal', 'list', '--json']))?.result?.terminals ?? [], ...offerReaders } = readers
   let listed = response.result.worktrees.filter((worktree) => !worktree.isArchived)
-  if (mayHoldTeam(listed)) listed = joinTeams(listed, await readTerminals().catch(() => []))
+  const needsTerminals = mayHoldTeam(listed) || listed.some((worktree) => worktree.isActive)
+  const terminals = needsTerminals ? await readTerminals().catch(() => []) : []
+  if (mayHoldTeam(listed)) listed = joinTeams(listed, terminals)
   const worktrees = await settleAgents(listed, readTurnEnded)
   const active = worktrees.find((worktree) => worktree.isActive)
   return {
@@ -122,7 +146,9 @@ export async function readWorkspaces(cli, run = runOrca, readers = {}) {
           path: active.path,
           displayName: active.displayName,
           agentStates: mainAgents(active).map((agent) => agent.state),
-          background: mainAgents(active).some((agent) => agent.background === true)
+          background: mainAgents(active).some((agent) => agent.background === true),
+          tabs: tabsOf(active, terminals),
+          uniqueAgentTabs: uniqueAgentTabs(active)
         }
       : null,
     agents: worktrees.flatMap((worktree) =>

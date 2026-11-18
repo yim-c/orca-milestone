@@ -51,7 +51,7 @@ function validate({ goal, tasks } = {}) {
   return valid ? null : `every task needs a subject and a status of ${STATUSES.join(', ')}`
 }
 
-function record(args, { dir, pid, cwd, now }) {
+function record(args, { dir, pid, cwd, tabId = null, now }) {
   const tasks = args.tasks.map((task, index) => ({
     id: String(index + 1),
     subject: task.subject.slice(0, SUBJECT_MAX),
@@ -59,7 +59,7 @@ function record(args, { dir, pid, cwd, now }) {
   }))
   mkdirSync(dir, { recursive: true })
   const file = join(dir, `codex-${pid}.json`)
-  const body = { pid, cwd, goal: args.goal.slice(0, GOAL_MAX), updatedAt: now(), tasks }
+  const body = { pid, cwd, ...(tabId ? { tabId } : {}), goal: args.goal.slice(0, GOAL_MAX), updatedAt: now(), tasks }
   // Replaced by rename, so the worker never reads half a file.
   writeFileSync(`${file}.tmp`, JSON.stringify(body))
   renameSync(`${file}.tmp`, file)
@@ -94,7 +94,7 @@ export function handleMessage(message, context) {
 }
 
 function serve() {
-  const context = { dir: progressDir(), pid: process.ppid, cwd: process.cwd(), now: Date.now }
+  const context = { dir: progressDir(), pid: process.ppid, cwd: process.cwd(), tabId: process.env.ORCA_TAB_ID || null, now: Date.now }
   createInterface({ input: process.stdin }).on('line', (line) => {
     let message
     try {
