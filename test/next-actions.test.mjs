@@ -43,7 +43,9 @@ test('nextOffer comes from the one live main agent that finished its turn', () =
   none(worktree([agent({ state: 'working' })]))
   none(worktree([agent({ lastAssistantMessage: 'no block' })]))
   none(worktree([agent(), agent({ paneKey: 'tab:other' })]))
-  none(worktree([agent({ agentType: 'gemini' })]))
+  none(worktree([agent({ agentType: 'aider' })]))
+  assert.ok(nextOffer(worktree([agent({ agentType: 'antigravity' })])))
+  assert.ok(nextOffer(worktree([agent({ agentType: 'gemini' })])))
   none(worktree([agent()], { isArchived: true }))
   // A closed pane's record and a teammate do not count as a second agent.
   assert.ok(nextOffer(worktree([agent(), agent({ paneKey: 'old', hasLivePty: undefined }), agent({ paneKey: 'mate', parentPaneKey: 'tab:leaf' })])))
