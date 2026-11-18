@@ -9,13 +9,39 @@ import {
   currentGoal,
   listRecentTaskLists,
   isListRunning,
+  readIdleSince,
   readPromptBeforeTask,
   readRunningSessionIds,
   readTasksFromTranscript,
   readTaskList,
-  readTranscriptHead
+  readTranscriptHead,
+  valueOfList
 } from '../src/claude-sessions.mjs'
 import { SESSION_A, SESSION_B, makeHome, markRunning, task, taskCalls, writeTasks, writeTranscript } from './helpers.mjs'
+
+test('readIdleSince gives when each running session that waits for the user started waiting', async () => {
+  const home = await makeHome()
+  const dir = join(home, '.claude', 'sessions')
+  await mkdir(dir, { recursive: true })
+  const write = (name, entry) => writeFile(join(dir, `${name}.json`), JSON.stringify(entry))
+  const NOT_RUNNING = 999999
+  await write(1, { pid: process.pid, sessionId: SESSION_A, status: 'idle', statusUpdatedAt: 1000 })
+  await write(2, { pid: process.pid, sessionId: SESSION_B, status: 'busy', statusUpdatedAt: 2000 })
+  await write(3, { pid: process.pid, sessionId: '33333333-3333-4333-8333-333333333333', status: 'idle' })
+  await write(4, { pid: NOT_RUNNING, sessionId: '44444444-4444-4444-8444-444444444444', status: 'idle', statusUpdatedAt: 4000 })
+  await write(5, { pid: process.pid, sessionId: 'not-a-session-id', status: 'idle', statusUpdatedAt: 5000 })
+  await writeFile(join(dir, 'notes.txt'), 'idle')
+  assert.deepEqual([...(await readIdleSince(dir))], [[SESSION_A, 1000]])
+  assert.deepEqual([...(await readIdleSince(join(home, 'missing')))], [])
+})
+
+test('valueOfList finds a session by its id, and a team lead by the id prefix of its list', () => {
+  const byId = new Map([[SESSION_A, 'a'], ['160361c4-8d86-4ae8-80ac-7bacd2e194cd', 'lead']])
+  assert.equal(valueOfList(SESSION_A, byId), 'a')
+  assert.equal(valueOfList('session-160361c4', byId), 'lead')
+  assert.equal(valueOfList('session-ffffffff', byId), null)
+  assert.equal(valueOfList(SESSION_B, byId), null)
+})
 
 test('readTaskList orders tasks by numeric id and skips other files', async () => {
   const home = await makeHome()

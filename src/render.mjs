@@ -38,12 +38,17 @@ function renderTask(task) {
   return `<li class="${status}"><span class="mark">${MARKS[status]}</span><span class="subject"><span class="strike">${escape(clip(subject, SUBJECT_MAX))}</span></span></li>`
 }
 
+// Whole hours only, so the panel changes once an hour and not with every refresh.
+function renderIdle(hours) {
+  return hours ? `<span class="idle" title="入力待ちのまま${hours}時間">待機 ${hours}時間</span>` : ''
+}
+
 function renderSession(session) {
   const percent = session.total === 0 ? 0 : Math.round((session.done / session.total) * 100)
   const goal = session.goal ? `<p class="goal">${escape(clip(session.goal, GOAL_MAX))}</p>` : ''
   // The key tells the panel this is another list, which it shows at once instead of animating.
   const key = escape(`${session.listId}\n${clip(session.goal ?? '', GOAL_MAX)}`)
-  return `<section data-key="${key}">${goal}<div class="count"><span>マイルストーン</span><strong>${session.done} / ${session.total}</strong></div>
+  return `<section data-key="${key}">${goal}<div class="count"><span>マイルストーン${renderIdle(session.idle)}</span><strong>${session.done} / ${session.total}</strong></div>
 <div class="bar"><div style="width:${percent}%"></div></div>
 <ol>${session.tasks.map(renderTask).join('')}</ol></section>`
 }
@@ -111,7 +116,7 @@ function renderRow(row) {
       ? `<span class="working">${AGENT_LABELS.working}</span>`
       : row.background
         ? '<span class="background">裏で実行中</span>'
-        : ''
+        : renderIdle(row.idle)
   const of = row.total > 0 ? `<span class="of">${row.done} / ${row.total}</span>` : ''
   const bar = row.total > 0 ? `<div class="bar"><div style="width:${percent}%"></div></div>` : ''
   const repo = row.repo ? `<span class="repo">${escape(row.repo)}</span>` : ''

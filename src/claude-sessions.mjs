@@ -46,6 +46,29 @@ function isRunning(pid) {
 }
 
 /**
+ * When each running Claude session that waits for the user started waiting, in ms since the epoch.
+ * Claude keeps its status in the session's file: `idle` while it waits, with the time it changed.
+ * A session that works, or whose file lacks either, is left out.
+ */
+export async function readIdleSince(sessionsRoot) {
+  const idle = new Map()
+  let names
+  try {
+    names = await readdir(sessionsRoot)
+  } catch {
+    return idle
+  }
+  for (const name of names) {
+    if (!/^\d+\.json$/.test(name)) continue
+    const entry = await readJson(join(sessionsRoot, name))
+    if (entry && isSessionId(entry.sessionId) && Number.isInteger(entry.pid) && isRunning(entry.pid) && entry.status === 'idle' && Number.isFinite(entry.statusUpdatedAt)) {
+      idle.set(entry.sessionId, entry.statusUpdatedAt)
+    }
+  }
+  return idle
+}
+
+/**
  * Ids of the Claude sessions running now. Each running session keeps
  * ~/.claude/sessions/<pid>.json, removed when it exits; the pid is checked in case it crashed.
  */
@@ -107,14 +130,17 @@ export async function readSessionTabs(sessionsRoot, cache = new Map(), readTab =
   return tabs
 }
 
-/** The tab of a list's session; a team's list is named by the id prefix of its lead's session. */
-export function tabOfList(listId, tabs) {
-  if (tabs.has(listId)) return tabs.get(listId)
+/** What is kept by session id, for a list's session; a team's list is named by the id prefix of its lead's session. */
+export function valueOfList(listId, bySession) {
+  if (bySession.has(listId)) return bySession.get(listId)
   const prefix = TEAM_LIST_ID.exec(listId)?.[1]
   if (!prefix) return null
-  for (const [sessionId, tabId] of tabs) if (sessionId.startsWith(`${prefix}-`)) return tabId
+  for (const [sessionId, value] of bySession) if (sessionId.startsWith(`${prefix}-`)) return value
   return null
 }
+
+/** The tab of a list's session. */
+export const tabOfList = valueOfList
 
 /** Whether the session that owns a task list (by its id, or a team's id prefix) is running. */
 export function isListRunning(listId, runningIds) {
