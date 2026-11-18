@@ -253,3 +253,23 @@ test('a list whose tab is closed is hidden, one with no known tab stays', () => 
   // Without a tab list (Orca could not read it) nothing is hidden.
   assert.deepEqual(buildModel({ ...workspace, tabs: [] }, sessions).sessions.map((s) => s.listId), ['open', 'closed', 'unknown'])
 })
+
+test('the status follows the selected tab: its own agents only', () => {
+  const tabbed = {
+    ...workspace,
+    agentStates: ['working', 'done'],
+    background: true,
+    tabs: [{ tabId: 'tab-1', title: 'A' }, { tabId: 'tab-2', title: 'B' }, { tabId: 'tab-3', title: 'Shell' }],
+    agentsByTab: [
+      { tabId: 'tab-1', state: 'working', background: false },
+      { tabId: 'tab-2', state: 'done', background: true }
+    ]
+  }
+  assert.equal(buildModel(tabbed, []).agent, 'working', 'all tabs: the whole workspace')
+  assert.equal(buildModel(tabbed, [], [], [], 'tab-1').agent, 'working')
+  assert.equal(buildModel(tabbed, [], [], [], 'tab-2').agent, 'background', 'only the tab with shells in the background')
+  assert.equal(buildModel(tabbed, [], [], [], 'tab-3').agent, 'none', 'a tab without an agent')
+  // Without agentsByTab the whole workspace's status stays.
+  const { agentsByTab, ...plain } = tabbed
+  assert.equal(buildModel(plain, [], [], [], 'tab-3').agent, 'working')
+})

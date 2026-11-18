@@ -146,6 +146,8 @@ export async function readWorkspaces(cli, run = runOrca, readers = {}) {
           path: active.path,
           displayName: active.displayName,
           agentStates: mainAgents(active).map((agent) => agent.state),
+          // The same per agent with its tab, so the status can follow the selected tab.
+          agentsByTab: mainAgents(active).map((agent) => ({ tabId: agent.paneKey?.split(':')[0] ?? null, state: agent.state, background: agent.background === true })),
           background: mainAgents(active).some((agent) => agent.background === true),
           tabs: tabsOf(active, terminals),
           uniqueAgentTabs: uniqueAgentTabs(active)
