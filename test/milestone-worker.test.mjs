@@ -289,6 +289,40 @@ test('view answers with what the panel should show, even when Orca could not be 
   }
 })
 
+test('a start that failed is tried again by the next caller, and a start that worked is not repeated', async () => {
+  const home = await makeHome()
+  const orca = fakeOrca()
+  const timers = []
+  const realSetInterval = globalThis.setInterval
+  globalThis.setInterval = (...args) => {
+    const timer = realSetInterval(...args)
+    timers.push(timer)
+    return timer
+  }
+  try {
+    let watched = 0
+    const worker = createMilestoneWorker({
+      orca,
+      home,
+      cli: 'orca',
+      readOrca: async () => ({ active: { path: '/work/app', displayName: 'app', agentStates: [] }, agents: [] }),
+      watchDir: () => {
+        watched += 1
+        if (watched === 1) throw new Error('watch failed')
+      }
+    })
+    await assert.rejects(worker.start(), /watch failed/)
+    const { html } = await worker.view()
+    assert.ok(html.includes('<h1>app</h1>'), 'the second caller starts the worker')
+    const watchedAfterStart = watched
+    await worker.start()
+    assert.equal(watched, watchedAfterStart, 'a worker that started is not started again')
+  } finally {
+    globalThis.setInterval = realSetInterval
+    timers.forEach(clearInterval)
+  }
+})
+
 test('an agent event asks Orca again only when that pane changed state', async () => {
   const home = await makeHome()
   let asked = 0

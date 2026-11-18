@@ -337,7 +337,12 @@ export function createMilestoneWorker({
       watchDir(progressRoot, () => schedule())
       setInterval(() => schedule(true), SYNC_MS)
       await refresh(true)
-    })()
+    })().catch((error) => {
+      // A failed start must not stay cached, or every handler that awaits it fails from now on.
+      // ponytail: a failure halfway through the watchers leaves the first one set, and a retry adds it again.
+      started = null
+      throw error
+    })
     return started
   }
 
