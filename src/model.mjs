@@ -121,8 +121,9 @@ function nextOf(offers, path, activeTabId) {
  * @param agents    [{ workspace, repo, path, focused, state, background, since }] Orca runs, one per Claude or Codex agent
  * @param offers    [{ kind, id, path, ... }] what agents offer to choose from, see next-actions.mjs
  * @param selectedTabId optional Orca tabId to filter the focused workspace's sessions
+ * @param stale true when the workspace and agents come from an earlier read, as the latest failed
  */
-export function buildModel(workspace, sessions, agents = [], offers = [], selectedTabId = null) {
+export function buildModel(workspace, sessions, agents = [], offers = [], selectedTabId = null, stale = false) {
   const workspacePaths = [...new Set([workspace?.path, ...agents.map((agent) => agent.path)].filter(Boolean))]
   const others = buildOthers(agents, sessions, workspacePaths)
   if (!workspace) return { kind: 'no-workspace', others }
@@ -150,6 +151,7 @@ export function buildModel(workspace, sessions, agents = [], offers = [], select
     workspace: workspace.displayName,
     tabs: tabs.length > 1 ? tabs : [],
     selectedTabId: tabs.length > 1 ? activeTabId : null,
+    stale,
     agent: states.includes('working')
       ? 'working'
       : states.includes('blocked') || states.includes('waiting')

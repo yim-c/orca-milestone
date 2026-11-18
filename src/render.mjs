@@ -164,8 +164,10 @@ function renderFocused(model) {
     return '<p class="empty">ワークスペースを開くと、エージェントの進捗をここに表示します。</p>'
   }
   const agent = AGENT_LABELS[model.agent] ?? ''
+  // Orca could not be read just now, so the workspace and the agent's state may be out of date.
+  const stale = model.stale ? '<span class="stale" title="Orcaから最新の状態を読み取れませんでした">古い情報</span>' : ''
   const refresh = `<button type="button" class="refresh" data-refresh title="更新" aria-label="更新">${REFRESH_ICON}</button>`
-  const header = `<header><h1>${escape(model.workspace)}</h1><div class="meta"><span class="agent ${model.agent}">${agent}</span>${refresh}</div></header>${renderTabs(model.tabs, model.selectedTabId)}`
+  const header = `<header><h1>${escape(model.workspace)}</h1><div class="meta">${stale}<span class="agent ${model.agent}">${agent}</span>${refresh}</div></header>${renderTabs(model.tabs, model.selectedTabId)}`
   if (model.kind === 'no-tasks') {
     const empty = model.selectedTabId
       ? 'このタブのエージェントはまだタスクを作っていません。'
