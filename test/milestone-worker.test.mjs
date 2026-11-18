@@ -448,6 +448,40 @@ test('the follow timer runs only while the chips follow and the workspace has se
   }
 })
 
+test('a session that has waited for hours is badged from its session file and Orca\'s state, and the hours grow with time', async () => {
+  const HOUR = 60 * 60 * 1000
+  const home = await makeHome()
+  const orca = fakeOrca()
+  const clock = { now: 100 * HOUR }
+  await writeTranscript(home, SESSION_A, { cwd: '/work/app', prompt: 'Old goal' })
+  await writeTasks(home, SESSION_A, [task(1, 'Step', 'pending')])
+  // The file Claude keeps for a running session: idle since 4.5 hours ago.
+  await writeFile(join(home, '.claude', 'sessions', `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: SESSION_A, status: 'idle', statusUpdatedAt: clock.now - 4.5 * HOUR }))
+  let state = 'done'
+  const worker = createMilestoneWorker({
+    orca,
+    home,
+    cli: 'orca',
+    now: () => clock.now,
+    readTab: async () => 'tab-1',
+    readOrca: async () => ({
+      active: { path: '/work/app', displayName: 'app', agentStates: [state], tabs: [{ tabId: 'tab-1', title: 'One' }], uniqueAgentTabs: {} },
+      agents: [{ workspace: 'app', repo: null, path: '/work/app', focused: true, state, background: false, since: 1, tabId: 'tab-1' }]
+    }),
+    watchDir: () => {}
+  })
+  await worker.refresh(true)
+  assert.ok(orca.shown().includes('待機 4時間'))
+
+  clock.now += HOUR
+  await worker.refresh(true)
+  assert.ok(orca.shown().includes('待機 5時間'), 'an hour later')
+
+  state = 'working'
+  await worker.refresh(true)
+  assert.ok(!orca.shown().includes('class="idle"'), 'Orca says it is at work')
+})
+
 test('toggling the other workspaces folds them away and shows them again, and a refresh keeps the choice', async () => {
   const home = await makeHome()
   const orca = fakeOrca()

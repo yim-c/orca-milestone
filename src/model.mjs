@@ -2,6 +2,22 @@
 
 const MAX_SESSIONS = 3
 const MAX_ROWS = 8
+// A Claude session that has waited for the user this long gets a badge saying so.
+const IDLE_BADGE_MS = 3 * 60 * 60 * 1000
+const HOUR_MS = 60 * 60 * 1000
+
+/**
+ * The whole hours a Claude session has waited for the user, or null. Only a session that has
+ * waited long enough, in a tab whose agents Orca all calls done with nothing running in the
+ * background, counts: Orca's state is what says it is not at work, and a session whose tab is
+ * unknown cannot be matched with it.
+ */
+function idleHours(session, agents) {
+  if (!(session.idleMs >= IDLE_BADGE_MS) || !session.tabId) return null
+  const inTab = agents.filter((agent) => agent.tabId === session.tabId)
+  if (inTab.length === 0 || !inTab.every((agent) => agent.state === 'done' && !agent.background)) return null
+  return Math.floor(session.idleMs / HOUR_MS)
+}
 
 export function isInside(path, root) {
   return path === root || path.startsWith(root.endsWith('/') ? root : `${root}/`)
@@ -70,6 +86,7 @@ function buildOthers(agents, sessions, workspacePaths) {
       working: entry.working && !entry.needsUser,
       background: entry.background && !entry.working && !entry.needsUser,
       since: entry.since,
+      idle: session ? idleHours(session, agents) : null,
       updatedAt: session?.updatedAt ?? 0,
       goal: session?.goal ?? null,
       ...counts
@@ -142,7 +159,7 @@ export function buildModel(workspace, sessions, agents = [], offers = [], select
     : workspaceSessions
   const mine = matching
     .slice(0, MAX_SESSIONS)
-    .map((session) => ({ listId: session.listId, goal: session.goal, ...progress(session.tasks) }))
+    .map((session) => ({ listId: session.listId, goal: session.goal, idle: idleHours(session, agents), ...progress(session.tasks) }))
   // With a tab selected, the status is that tab's agents'; Orca names the tab of each in agentsByTab.
   const inTab = activeTabId && workspace.agentsByTab ? workspace.agentsByTab.filter((entry) => entry.tabId === activeTabId) : null
   const states = inTab ? inTab.map((entry) => entry.state) : (workspace.agentStates ?? [])

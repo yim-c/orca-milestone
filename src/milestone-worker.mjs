@@ -9,11 +9,13 @@ import {
   findListTranscript,
   currentGoal,
   isListRunning,
+  readIdleSince,
   readProcessTab,
   readRunningSessionIds,
   readSessionTabs,
   readTasksFromTranscript,
   tabOfList,
+  valueOfList,
   listRecentTaskLists,
   readPromptBeforeTask,
   readTaskList,
@@ -163,6 +165,7 @@ export function createMilestoneWorker({
   async function allSessions() {
     const running = await readRunningSessionIds(paths.sessionsRoot)
     const tabsBySession = await readSessionTabs(paths.sessionsRoot, processTabs, readTab)
+    const idleSince = await readIdleSince(paths.sessionsRoot)
     const lists = await listRecentTaskLists(tasksRoot, { maxAgeMs: TASK_LIST_MAX_AGE_MS })
     const sessions = []
     for (const list of lists) {
@@ -179,10 +182,13 @@ export function createMilestoneWorker({
       if (tasks.length === 0) continue
       const head = await headOf(list.listId)
       if (!head?.cwd) continue
+      const idleAt = valueOfList(list.listId, idleSince)
       sessions.push({
         ...list,
         cwd: head.cwd,
         tabId: tabOfList(list.listId, tabsBySession) ?? sessionTabs.get(list.listId) ?? null,
+        // How long the session has waited for the user, taken now so the model needs no clock.
+        idleMs: idleAt === null ? null : Math.max(0, now() - idleAt),
         source: 'claude',
         ...(await goalOf(list.listId, head, tasks))
       })

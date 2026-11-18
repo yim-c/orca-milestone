@@ -85,6 +85,41 @@ test('folding the other workspaces hides their rows but keeps the heading and th
   assert.ok(!folded.includes('class="row '))
 })
 
+const HOUR = 60 * 60 * 1000
+const idleSession = (extra = {}) => ({ listId: 'idle', cwd: '/work/app', goal: 'Waiting', tasks: [task(1, 'x', 'pending')], tabId: 't1', idleMs: 5.5 * HOUR, updatedAt: 1, ...extra })
+const doneAgent = (extra = {}) => ({ workspace: 'app', repo: null, path: '/work/app', focused: true, state: 'done', background: false, since: 1, tabId: 't1', ...extra })
+
+test('a Claude session that has waited for the user for hours gets a badge with the whole hours, and only then', () => {
+  const idle = (session, agents) => buildModel(workspace, [session], agents).sessions[0].idle
+  assert.equal(idle(idleSession(), [doneAgent()]), 5)
+  assert.equal(idle(idleSession({ idleMs: 3 * HOUR }), [doneAgent()]), 3, 'three hours is enough')
+  assert.equal(idle(idleSession({ idleMs: 3 * HOUR - 1 }), [doneAgent()]), null, 'not yet three hours')
+  assert.equal(idle(idleSession({ idleMs: undefined }), [doneAgent()]), null, 'a session with no waiting time, as a Codex one')
+  assert.equal(idle(idleSession(), [doneAgent({ state: 'working' })]), null, 'Orca says it is at work')
+  assert.equal(idle(idleSession(), [doneAgent({ background: true })]), null, 'work runs in the background')
+  assert.equal(idle(idleSession(), [doneAgent(), doneAgent({ state: 'working' })]), null, 'another agent of the tab works')
+  assert.equal(idle(idleSession(), [doneAgent({ tabId: 't2' })]), null, 'no agent of that tab')
+  assert.equal(idle(idleSession({ tabId: null }), [doneAgent()]), null, 'a session whose tab is unknown cannot be matched')
+  assert.equal(idle(idleSession(), []), null)
+})
+
+test('the badge shows on the session of the focused workspace and on the row of another workspace', () => {
+  const focused = renderBody(buildModel(workspace, [idleSession()], [doneAgent()]))
+  assert.ok(focused.includes('<span class="idle" title="入力待ちのまま5時間">待機 5時間</span>'))
+  assert.ok(!renderBody(buildModel(workspace, [idleSession({ idleMs: HOUR })], [doneAgent()])).includes('class="idle"'))
+
+  const other = idleSession({ listId: 'other', cwd: '/work/other', tabId: 't9', idleMs: 13.2 * HOUR })
+  const agents = [doneAgent({ workspace: 'other', path: '/work/other', focused: false, tabId: 't9' })]
+  const model = buildModel(workspace, [other], agents)
+  assert.equal(model.others.rows[0].idle, 13)
+  const html = renderBody(model)
+  assert.equal(html.match(/待機 13時間/g).length, 1)
+  assert.ok(html.indexOf('class="idle"') > html.indexOf('class="top"'), 'on the head of the row')
+
+  const working = buildModel(workspace, [other], [{ ...agents[0], state: 'working' }])
+  assert.ok(renderBody(working).includes('class="working"') && !renderBody(working).includes('class="idle"'), 'a row at work shows that, not the wait')
+})
+
 test('buildModel reports no workspace and no tasks', () => {
   assert.equal(buildModel(null, []).kind, 'no-workspace')
   const model = buildModel({ ...workspace, agentStates: [] }, [])
