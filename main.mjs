@@ -25,6 +25,7 @@ export default function activate(orca) {
   orca.panels.handle('workspace.open', ({ path }) => worker.openWorkspace(path))
   orca.panels.handle('next.send', (request) => worker.sendNext(request))
   orca.panels.handle('tab.select', ({ tabId } = {}) => worker.selectTab(tabId))
+  orca.panels.handle('others.toggle', () => worker.toggleOthers())
   orca.commands.register('milestone.refresh', async () => {
     await worker.start()
     await worker.refresh(true)

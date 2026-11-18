@@ -64,6 +64,27 @@ test('the model carries the out of date mark and the header shows it only then',
   assert.ok(!renderBody(buildModel(workspace, [])).includes('class="stale"'))
 })
 
+test('folding the other workspaces hides their rows but keeps the heading and the count of those needing the user', () => {
+  const agents = [
+    { workspace: 'w1', path: '/other/1', focused: false, state: 'waiting' },
+    { workspace: 'w2', path: '/other/2', focused: false, state: 'idle' }
+  ]
+  const sessions = agents.map((agent, i) => ({ listId: `o${i}`, cwd: agent.path, goal: `Goal ${i}`, tasks: [task(1, 'x', 'pending')], updatedAt: i }))
+
+  const open = renderBody(buildModel(workspace, sessions, agents))
+  assert.ok(open.includes('aria-expanded="true"'))
+  assert.ok(open.includes('class="rows"'))
+
+  const model = buildModel(workspace, sessions, agents, [], null, false, true)
+  assert.equal(model.others.collapsed, true)
+  const folded = renderBody(model)
+  assert.ok(folded.includes('aria-expanded="false"'))
+  assert.ok(folded.includes('ほかのワークスペース'))
+  assert.ok(folded.includes('要確認 1'), 'what needs the user is still counted')
+  assert.ok(!folded.includes('class="rows"'))
+  assert.ok(!folded.includes('class="row '))
+})
+
 test('buildModel reports no workspace and no tasks', () => {
   assert.equal(buildModel(null, []).kind, 'no-workspace')
   const model = buildModel({ ...workspace, agentStates: [] }, [])

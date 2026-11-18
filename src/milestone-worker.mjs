@@ -96,6 +96,9 @@ export function createMilestoneWorker({
   let selectedTabId = null
   // Set while the workspace and agents shown come from an earlier read because the latest failed.
   let stale = false
+  // The person folded the other workspaces away. The worker keeps it, so a panel that is
+  // recreated, as Orca does when its sidebar tab is switched, comes back the same.
+  let othersCollapsed = false
 
   async function headOf(listId) {
     if (heads.has(listId)) return heads.get(listId)
@@ -219,7 +222,7 @@ export function createMilestoneWorker({
     if (selectedTabId && !workspace?.tabs?.some((tab) => tab.tabId === selectedTabId)) {
       selectedTabId = null
     }
-    publish(renderBody(buildModel(workspace, lastSessions, agents, offers, selectedTabId, stale)))
+    publish(renderBody(buildModel(workspace, lastSessions, agents, offers, selectedTabId, stale, othersCollapsed)))
   }
 
   async function refreshOnce(askOrca) {
@@ -261,6 +264,13 @@ export function createMilestoneWorker({
     publishModel()
     if (selectedTabId) await showTab(selectedTabId)
     return { selectedTabId }
+  }
+
+  /** Folds the other workspaces away, or shows them again. */
+  function toggleOthers() {
+    othersCollapsed = !othersCollapsed
+    publishModel()
+    return { collapsed: othersCollapsed }
   }
 
   /** Runs refreshes one at a time; a request during a run starts one more afterwards. */
@@ -346,5 +356,5 @@ export function createMilestoneWorker({
     return started
   }
 
-  return { start, refresh, schedule, agentChanged, view, openWorkspace, sendNext, selectTab }
+  return { start, refresh, schedule, agentChanged, view, openWorkspace, sendNext, selectTab, toggleOthers }
 }

@@ -235,6 +235,36 @@ test('a refresh that does not ask Orca does not change the out of date mark', as
   assert.ok(orca.shown().includes('class="stale"'))
 })
 
+test('toggling the other workspaces folds them away and shows them again, and a refresh keeps the choice', async () => {
+  const home = await makeHome()
+  const orca = fakeOrca()
+  await writeTranscript(home, SESSION_B, { cwd: '/work/other', prompt: 'Other goal' })
+  await writeTasks(home, SESSION_B, [task(1, 'Other step', 'pending')])
+  const worker = createMilestoneWorker({
+    orca,
+    home,
+    cli: 'orca',
+    readOrca: async () => ({
+      active: { path: '/work/app', displayName: 'app', agentStates: [] },
+      agents: [{ workspace: 'other', path: '/work/other', focused: false, state: 'idle' }]
+    }),
+    watchDir: () => {}
+  })
+  await worker.refresh(true)
+  assert.ok(orca.shown().includes('class="rows"'))
+  assert.ok(orca.shown().includes('aria-expanded="true"'))
+
+  assert.deepEqual(worker.toggleOthers(), { collapsed: true })
+  assert.ok(!orca.shown().includes('class="rows"'))
+  assert.ok(orca.shown().includes('aria-expanded="false"'))
+
+  await worker.refresh(true)
+  assert.ok(!orca.shown().includes('class="rows"'), 'a refresh does not unfold them')
+
+  assert.deepEqual(worker.toggleOthers(), { collapsed: false })
+  assert.ok(orca.shown().includes('class="rows"'))
+})
+
 test('a refresh posts only a real change, at once', async () => {
   const home = await makeHome()
   const orca = fakeOrca()
