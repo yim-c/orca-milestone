@@ -187,6 +187,54 @@ test('a failing CLI leaves the panel showing that no workspace is known', async 
   assert.match(logs.join('\n'), /runtime unavailable/)
 })
 
+test('a failed read keeps the last workspace on screen marked as out of date until a read succeeds', async () => {
+  const home = await makeHome()
+  const orca = fakeOrca()
+  let fail = false
+  const worker = createMilestoneWorker({
+    orca,
+    home,
+    cli: 'orca',
+    readOrca: async () => {
+      if (fail) throw new Error('runtime unavailable')
+      return { active: { path: '/work/app', displayName: 'app', agentStates: ['working'] }, agents: [] }
+    },
+    watchDir: () => {}
+  })
+  await worker.refresh(true)
+  assert.ok(!orca.shown().includes('class="stale"'))
+
+  fail = true
+  await worker.refresh(true)
+  assert.ok(orca.shown().includes('<h1>app</h1>'), 'the last workspace stays')
+  assert.ok(orca.shown().includes('class="stale"'))
+
+  fail = false
+  await worker.refresh(true)
+  assert.ok(!orca.shown().includes('class="stale"'), 'a successful read clears the mark')
+})
+
+test('a refresh that does not ask Orca does not change the out of date mark', async () => {
+  const home = await makeHome()
+  const orca = fakeOrca()
+  let fail = false
+  const worker = createMilestoneWorker({
+    orca,
+    home,
+    cli: 'orca',
+    readOrca: async () => {
+      if (fail) throw new Error('runtime unavailable')
+      return { active: { path: '/work/app', displayName: 'app', agentStates: [] }, agents: [] }
+    },
+    watchDir: () => {}
+  })
+  await worker.refresh(true)
+  fail = true
+  await worker.refresh(true)
+  await worker.refresh()
+  assert.ok(orca.shown().includes('class="stale"'))
+})
+
 test('a refresh posts only a real change, at once', async () => {
   const home = await makeHome()
   const orca = fakeOrca()

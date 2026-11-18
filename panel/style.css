@@ -32,6 +32,7 @@ h1 { margin: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overfl
   border-color: color-mix(in oklch, var(--orca-foreground) 28%, transparent);
   background: color-mix(in oklch, var(--orca-foreground) 10%, transparent); }
 .tab:focus-visible { outline: 1px solid var(--orca-foreground); outline-offset: 1px; }
+.stale { flex: none; font-size: 11px; font-weight: 600; color: var(--ms-todo); }
 .agent { flex: none; font-size: 11px; font-weight: 600; color: var(--orca-muted-foreground); }
 .agent.working { color: var(--ms-working); }
 .agent.waiting { color: var(--ms-todo); }

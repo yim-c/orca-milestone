@@ -56,6 +56,14 @@ test('other workspaces past the limit are counted and the panel says how many ar
   assert.ok(!renderBody(exact).includes('class="more"'))
 })
 
+test('the model carries the out of date mark and the header shows it only then', () => {
+  assert.equal(buildModel(workspace, []).stale, false)
+  const model = buildModel(workspace, [], [], [], null, true)
+  assert.equal(model.stale, true)
+  assert.ok(renderBody(model).includes('class="stale"'))
+  assert.ok(!renderBody(buildModel(workspace, [])).includes('class="stale"'))
+})
+
 test('buildModel reports no workspace and no tasks', () => {
   assert.equal(buildModel(null, []).kind, 'no-workspace')
   const model = buildModel({ ...workspace, agentStates: [] }, [])

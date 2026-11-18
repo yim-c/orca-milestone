@@ -94,6 +94,8 @@ export function createMilestoneWorker({
   const processTabs = new Map()
   let lastSessions = []
   let selectedTabId = null
+  // Set while the workspace and agents shown come from an earlier read because the latest failed.
+  let stale = false
 
   async function headOf(listId) {
     if (heads.has(listId)) return heads.get(listId)
@@ -217,7 +219,7 @@ export function createMilestoneWorker({
     if (selectedTabId && !workspace?.tabs?.some((tab) => tab.tabId === selectedTabId)) {
       selectedTabId = null
     }
-    publish(renderBody(buildModel(workspace, lastSessions, agents, offers, selectedTabId)))
+    publish(renderBody(buildModel(workspace, lastSessions, agents, offers, selectedTabId, stale)))
   }
 
   async function refreshOnce(askOrca) {
@@ -227,7 +229,9 @@ export function createMilestoneWorker({
         let found
         ;({ active: workspace, agents, offers: found } = await readOrca(cli, runCli, readers))
         offers = found ?? []
+        stale = false
       } catch (error) {
+        stale = true
         orca.log(`milestone: could not read the workspaces: ${error.message}`)
       }
     }
