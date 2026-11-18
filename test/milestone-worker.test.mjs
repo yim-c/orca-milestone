@@ -286,6 +286,40 @@ test('the chips follow the tab Orca shows, from the first refresh on', async () 
   }
 })
 
+test('following logs one line each time the selection moves to another tab, and nothing otherwise', async () => {
+  const home = await makeHome()
+  const logs = []
+  const orca = { ...fakeOrca(), log: (line) => logs.push(line) }
+  const shown = { tab: 'tab-2' }
+  const worker = followWorker({ orca, home, shown })
+  const lines = () => logs.filter((line) => line.includes('following tab'))
+
+  await worker.refresh(true)
+  assert.deepEqual(lines(), ['milestone: following tab tab-2'])
+
+  await worker.followNow()
+  await worker.refresh(true)
+  assert.equal(lines().length, 1, 'the same tab again logs nothing')
+
+  shown.tab = 'tab-1'
+  await worker.followNow()
+  assert.deepEqual(lines(), ['milestone: following tab tab-2', 'milestone: following tab tab-1'])
+
+  await worker.selectTab('tab-2')
+  shown.tab = 'tab-2'
+  await worker.followNow()
+  assert.equal(lines().length, 2, 'a chip pressed by hand is not following')
+
+  shown.tab = 'browser-tab'
+  await worker.followNow()
+  assert.equal(lines().length, 2, 'a tab that is not a terminal tab is not followed')
+
+  await worker.selectTab(null)
+  shown.tab = 'tab-1'
+  await worker.followNow()
+  assert.equal(lines().length, 2, 'not following logs nothing')
+})
+
 test('the chip for all tabs stops following, and a chip for one tab follows again once Orca shows it', async () => {
   const home = await makeHome()
   const orca = fakeOrca()

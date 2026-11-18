@@ -262,7 +262,11 @@ export function createMilestoneWorker({
       if (active !== pendingTab.tabId && now() < pendingTab.until) return
       pendingTab = null
     }
-    selectedTabId = active
+    if (selectedTabId !== active) {
+      selectedTabId = active
+      // Reading the saved state works silently, so this line is how a log shows that following works.
+      orca.log(`milestone: following tab ${active}`)
+    }
   }
 
   /** One look at the tab Orca shows; the panel is posted again only when the selection moved. */
