@@ -367,3 +367,49 @@ test('a list keeps its tab from the process environment with no agent event, so 
   assert.ok(shown.includes('Current step'))
   assert.ok(!shown.includes('Old step'), 'the list of the closed tab is hidden without any agent event')
 })
+
+test('pressing a tab chip filters the panel and brings that tab to the front in Orca', async () => {
+  const home = await makeHome()
+  const logs = []
+  const orca = { ...fakeOrca(), log: (line) => logs.push(line) }
+  const calls = []
+  let failing = false
+  const terminals = [
+    { handle: 'h1', tabId: 'tab-1', leafId: 'a' },
+    { handle: 'h2', tabId: 'tab-2', leafId: 'b' }
+  ]
+  const worker = createMilestoneWorker({
+    orca,
+    home,
+    cli: 'orca',
+    readOrca: async () => ({
+      active: { path: '/work/app', displayName: 'app', agentStates: ['idle'], tabs: [{ tabId: 'tab-1', title: 'A' }, { tabId: 'tab-2', title: 'B' }], uniqueAgentTabs: {} },
+      agents: []
+    }),
+    runCli: async (_cli, args) => {
+      calls.push(args.join(' '))
+      if (failing) throw new Error('orca is gone')
+      return args[1] === 'list' ? { ok: true, result: { terminals } } : { ok: true, result: {} }
+    },
+    watchDir: () => {}
+  })
+  await worker.refresh(true)
+
+  assert.deepEqual(await worker.selectTab('tab-2'), { selectedTabId: 'tab-2' })
+  assert.deepEqual(calls, ['terminal list --json', 'terminal switch --terminal h2 --json'])
+
+  calls.length = 0
+  assert.deepEqual(await worker.selectTab(null), { selectedTabId: null })
+  assert.deepEqual(calls, [], 'showing all tabs switches nothing')
+
+  assert.deepEqual(await worker.selectTab('tab-gone'), { selectedTabId: null })
+  assert.deepEqual(calls, [], 'a tab that is not open switches nothing')
+
+  terminals.length = 0
+  assert.deepEqual(await worker.selectTab('tab-1'), { selectedTabId: 'tab-1' })
+  assert.deepEqual(calls, ['terminal list --json'], 'a tab with no terminal is not switched to')
+
+  failing = true
+  assert.deepEqual(await worker.selectTab('tab-2'), { selectedTabId: 'tab-2' }, 'the filter stays when Orca fails')
+  assert.ok(logs.some((line) => line.includes('could not show the tab: orca is gone')))
+})
