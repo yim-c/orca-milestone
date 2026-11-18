@@ -12,6 +12,7 @@ import {
   readIdleSince,
   readProcessTab,
   readRunningSessionIds,
+  readRunningSessions,
   readSessionTabs,
   readTasksFromTranscript,
   tabOfList,
@@ -30,6 +31,7 @@ import { readCodexProgress } from './codex-progress.mjs'
 import { buildModel } from './model.mjs'
 import { createNextSender, readPaneScreen, readTerminalScreen } from './next-actions.mjs'
 import { createLaunchInfoReader, createLaunchReader, createRestarter } from './restart.mjs'
+import { createSessionCloser } from './session-closer.mjs'
 import { createGrantAccess } from './turn-grant.mjs'
 import { readWorkspaces, runOrca } from './orca-cli.mjs'
 import { progressDir } from './progress-server.mjs'
@@ -55,6 +57,7 @@ export function createMilestoneWorker({
   now = Date.now,
   readTab = readProcessTab,
   readActive = (workspacePath) => readActiveTab(profileStatePath(home), workspacePath),
+  closeDeps = {},
   watchDir = (dir, onChange) => watch(dir, { recursive: true }, onChange)
 }) {
   const paths = claudePaths(home)
@@ -189,6 +192,8 @@ export function createMilestoneWorker({
         tabId: tabOfList(list.listId, tabsBySession) ?? sessionTabs.get(list.listId) ?? null,
         // How long the session has waited for the user, taken now so the model needs no clock.
         idleMs: idleAt === null ? null : Math.max(0, now() - idleAt),
+        // When it started waiting, which a press on its close button is checked against.
+        idleAt,
         source: 'claude',
         ...(await goalOf(list.listId, head, tasks))
       })
@@ -390,6 +395,41 @@ export function createMilestoneWorker({
     restart: createRestarter({ home, run: runArgs, readLaunch: readers.readLaunch, readScreen: (handle) => readTerminalScreen(runArgs, handle) })
   })
 
+  const closeIdleSession = createSessionCloser({
+    home,
+    run: runArgs,
+    readSession: async (sessionId) => (await readRunningSessions(paths.sessionsRoot)).find((entry) => entry.sessionId === sessionId) ?? null,
+    readTab: (pid) => readTab(pid),
+    readOrca: () => readOrca(cli, runCli, readers),
+    readScreen: (handle) => readTerminalScreen(runArgs, handle),
+    now,
+    ...closeDeps
+  })
+  // A session being closed takes no second request: two presses would send `/exit` twice.
+  const closing = new Set()
+
+  /**
+   * Closes a session that waits for the user, as its close button asks. The panel shows why when
+   * nothing was closed, or when only the session ended.
+   */
+  async function closeSession(request) {
+    const { sessionId, since } = request ?? {}
+    if (typeof sessionId !== 'string' || !Number.isFinite(since)) return { closed: false, reason: 'stale' }
+    if (closing.has(sessionId)) return { closed: false, reason: 'busy' }
+    closing.add(sessionId)
+    try {
+      const result = await closeIdleSession({ sessionId, since })
+      schedule(true)
+      return result
+    } catch (error) {
+      orca.log(`milestone: could not close the session: ${error.message}`)
+      schedule(true)
+      return { closed: false, reason: 'failed' }
+    } finally {
+      closing.delete(sessionId)
+    }
+  }
+
   /** Sends the prompt of a pressed button to its agent; the panel shows what went wrong. */
   async function sendNext(request) {
     try {
@@ -440,5 +480,5 @@ export function createMilestoneWorker({
     return started
   }
 
-  return { start, refresh, schedule, agentChanged, view, openWorkspace, sendNext, selectTab, toggleOthers, followNow }
+  return { start, refresh, schedule, agentChanged, view, openWorkspace, sendNext, selectTab, toggleOthers, followNow, closeSession }
 }

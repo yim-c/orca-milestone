@@ -454,7 +454,13 @@ export async function readRunningSessions(sessionsRoot) {
     if (!/^\d+\.json$/.test(name)) continue
     const entry = await readJson(join(sessionsRoot, name))
     if (entry && isSessionId(entry.sessionId) && Number.isInteger(entry.pid) && isRunning(entry.pid) && typeof entry.cwd === 'string') {
-      sessions.push({ sessionId: entry.sessionId, cwd: entry.cwd, pid: entry.pid })
+      sessions.push({
+        sessionId: entry.sessionId,
+        cwd: entry.cwd,
+        pid: entry.pid,
+        status: typeof entry.status === 'string' ? entry.status : null,
+        statusUpdatedAt: Number.isFinite(entry.statusUpdatedAt) ? entry.statusUpdatedAt : null
+      })
     }
   }
   return sessions

@@ -482,6 +482,93 @@ test('a session that has waited for hours is badged from its session file and Or
   assert.ok(!orca.shown().includes('class="idle"'), 'Orca says it is at work')
 })
 
+/** What the worker needs to close a session: its file, the pane in Orca and the processes around it, all faked. */
+async function closableWorker({ overrides = {}, since = 5000 } = {}) {
+  const home = await makeHome()
+  const orca = { ...fakeOrca(), logs: [] }
+  orca.log = (line) => orca.logs.push(line)
+  await mkdir(join(home, '.claude', 'sessions'), { recursive: true })
+  await writeFile(join(home, '.claude', 'sessions', `${process.pid}.json`), JSON.stringify({ pid: process.pid, sessionId: SESSION_A, cwd: '/work/app', status: 'idle', statusUpdatedAt: since }))
+  const calls = []
+  const state = { exited: false, closed: false, clock: 0 }
+  const rule = '─'.repeat(20)
+  const worker = createMilestoneWorker({
+    orca,
+    home,
+    cli: 'orca',
+    readTab: async () => 'tab-1',
+    readOrca: async () => ({
+      active: { path: '/work/app', displayName: 'app', agentStates: ['done'], tabs: [{ tabId: 'tab-1', title: 'One' }], uniqueAgentTabs: {} },
+      agents: [{ workspace: 'app', repo: null, path: '/work/app', focused: true, state: 'done', background: false, since: 1, tabId: 'tab-1', paneKey: 'tab-1:leaf' }],
+      offers: []
+    }),
+    runCli: async (_cli, args) => {
+      calls.push(args.join(' '))
+      if (args[1] === 'list') return { ok: true, result: { terminals: state.closed ? [] : [{ handle: 'h1', tabId: 'tab-1', leafId: 'leaf', ptyId: 'pty-1' }] } }
+      if (args[1] === 'send') {
+        if (args.includes('/exit')) state.exited = true
+        return { ok: true, result: { send: { accepted: true } } }
+      }
+      if (args[1] === 'close') {
+        state.closed = true
+        return { ok: true, result: { close: {} } }
+      }
+      return { ok: true, result: {} }
+    },
+    closeDeps: {
+      readScreen: async () => (state.exited ? 'me@host app %' : `${rule}\n❯ \n${rule}`),
+      readOutput: async () => '',
+      readProc: async (pid) => {
+        if (pid === process.pid) return state.exited ? null : { pid, ppid: 50, pgid: pid, tpgid: pid, tty: 't', stat: 'R+', comm: 'claude' }
+        return { pid: 50, ppid: 1, pgid: 50, tpgid: 50, tty: 't', stat: 'S+', comm: 'zsh' }
+      },
+      readChildren: async () => [],
+      running: (pid) => !(pid === process.pid && state.exited),
+      wait: async (ms) => {
+        state.clock += ms
+      },
+      now: () => state.clock,
+      ...overrides
+    },
+    watchDir: () => {}
+  })
+  return { worker, orca, calls }
+}
+
+test('closing a session through the worker checks it again, exits it and closes its tab', async () => {
+  const { worker, calls } = await closableWorker()
+  assert.deepEqual(await worker.closeSession({ sessionId: SESSION_A, since: 1 }), { closed: false, reason: 'stale' }, 'it started waiting again since it was shown')
+  assert.deepEqual(calls, [], 'nothing was asked of Orca')
+
+  assert.deepEqual(await worker.closeSession({ sessionId: SESSION_A, since: 5000 }), { closed: true })
+  assert.ok(calls.indexOf('terminal send --terminal h1 --text /exit --enter --json') < calls.indexOf('terminal close --terminal h1 --tab --json'))
+})
+
+test('a close request names a session and the time it was shown, and one session is closed once at a time', async () => {
+  let release
+  const gate = new Promise((resolve) => {
+    release = resolve
+  })
+  const { worker } = await closableWorker({ overrides: { readSession: async () => { await gate; return null } } })
+  for (const bad of [undefined, null, {}, { sessionId: 7, since: 1 }, { sessionId: SESSION_A, since: 'x' }]) {
+    assert.deepEqual(await worker.closeSession(bad), { closed: false, reason: 'stale' })
+  }
+  const first = worker.closeSession({ sessionId: SESSION_A, since: 5000 })
+  assert.deepEqual(await worker.closeSession({ sessionId: SESSION_A, since: 5000 }), { closed: false, reason: 'busy' })
+  release()
+  assert.deepEqual(await first, { closed: false, reason: 'stale' })
+  assert.deepEqual(await worker.closeSession({ sessionId: SESSION_A, since: 5000 }), { closed: false, reason: 'stale' }, 'it can be asked again once it is done')
+})
+
+test('a step that fails is logged and reported as a failure, and the session can be asked again', async () => {
+  let fail = true
+  const { worker, orca } = await closableWorker({ overrides: { readSession: async () => { if (fail) throw new Error('boom'); return null } } })
+  assert.deepEqual(await worker.closeSession({ sessionId: SESSION_A, since: 5000 }), { closed: false, reason: 'failed' })
+  assert.ok(orca.logs.some((line) => line.includes('could not close the session: boom')))
+  fail = false
+  assert.deepEqual(await worker.closeSession({ sessionId: SESSION_A, since: 5000 }), { closed: false, reason: 'stale' })
+})
+
 test('toggling the other workspaces folds them away and shows them again, and a refresh keeps the choice', async () => {
   const home = await makeHome()
   const orca = fakeOrca()

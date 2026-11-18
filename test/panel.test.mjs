@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { test } from 'node:test'
 import { JSDOM } from 'jsdom'
 import { scrollExpandedRows } from '../panel/expand.mjs'
+import { closeOnPress, CONFIRM_MS, NOTE_MS } from '../panel/close.mjs'
 import { openOnPress } from '../panel/open.mjs'
 import { toggleOthersOnPress } from '../panel/others.mjs'
 import { patchChildren } from '../panel/patch.mjs'
@@ -235,6 +236,174 @@ test('folding the other workspaces patches their rows away and back, keeping the
   patchChildren(root, renderBody(buildModel(workspace, sessions, agents)))
   assert.ok(root.querySelector('.rows'))
   assert.equal(fold.getAttribute('aria-expanded'), 'true')
+})
+
+/** Timers the test runs by hand, in the order they were set. */
+function timers() {
+  const pending = []
+  return {
+    later: (fn, ms) => {
+      const timer = { fn, ms, live: true }
+      pending.push(timer)
+      return timer
+    },
+    cancel: (timer) => {
+      if (timer) timer.live = false
+    },
+    run: (ms) => pending.filter((timer) => timer.live && timer.ms === ms).forEach((timer) => {
+      timer.live = false
+      timer.fn()
+    }),
+    count: (ms) => pending.filter((timer) => timer.live && timer.ms === ms).length
+  }
+}
+
+const closeButton = (id, since = 5000, unfinished = 3) => `<button type="button" class="close-session" data-close="${id}" data-since="${since}" data-unfinished="${unfinished}">閉じる</button>`
+const settle = () => new Promise((resolve) => setImmediate(resolve))
+
+test('closing takes two presses: the first asks, the second sends what the worker checks again', async () => {
+  const root = body(closeButton('s1'))
+  const clock = timers()
+  const requests = []
+  closeOnPress(root, async (request) => {
+    requests.push(request)
+    return { closed: true }
+  }, clock)
+  const button = root.querySelector('[data-close]')
+
+  button.click()
+  assert.deepEqual(requests, [], 'the first press only asks')
+  assert.equal(button.textContent, '本当に閉じる？（未完了 3）')
+  assert.ok(button.classList.contains('armed'))
+
+  button.click()
+  assert.deepEqual(requests, [{ sessionId: 's1', since: 5000 }])
+  assert.equal(button.textContent, '閉じています…')
+  assert.ok(button.disabled)
+  await settle()
+  assert.equal(button.textContent, '閉じる')
+  assert.ok(!button.disabled)
+  assert.equal(root.ownerDocument.querySelector('.note').textContent, 'セッションを閉じました。')
+})
+
+test('without unfinished tasks the question does not count them', () => {
+  const root = body(closeButton('s1', 5000, 0))
+  closeOnPress(root, async () => ({ closed: true }), timers())
+  root.querySelector('[data-close]').click()
+  assert.equal(root.querySelector('[data-close]').textContent, '本当に閉じる？')
+})
+
+test('the question goes back by itself, and then needs two presses again', () => {
+  const root = body(closeButton('s1'))
+  const clock = timers()
+  const requests = []
+  closeOnPress(root, async (request) => requests.push(request), clock)
+  const button = root.querySelector('[data-close]')
+  button.click()
+  clock.run(CONFIRM_MS)
+  assert.equal(button.textContent, '閉じる')
+  assert.ok(!button.classList.contains('armed'))
+  button.click()
+  assert.deepEqual(requests, [], 'a press after the question went away only asks again')
+  assert.equal(button.textContent, '本当に閉じる？（未完了 3）')
+})
+
+test('pressing another close button asks about that one and drops the first question', () => {
+  const root = body(`${closeButton('s1')}${closeButton('s2', 6000, 1)}`)
+  const requests = []
+  closeOnPress(root, async (request) => requests.push(request), timers())
+  const [first, second] = root.querySelectorAll('[data-close]')
+  first.click()
+  second.click()
+  assert.equal(first.textContent, '閉じる')
+  assert.equal(second.textContent, '本当に閉じる？（未完了 1）')
+  assert.deepEqual(requests, [])
+  second.click()
+  assert.deepEqual(requests, [{ sessionId: 's2', since: 6000 }])
+})
+
+test('while a session is being closed another press sends nothing', async () => {
+  const root = body(closeButton('s1'))
+  const requests = []
+  let release
+  closeOnPress(root, (request) => {
+    requests.push(request)
+    return new Promise((resolve) => {
+      release = resolve
+    })
+  }, timers())
+  const button = root.querySelector('[data-close]')
+  button.click()
+  button.click()
+  button.click()
+  button.click()
+  assert.equal(requests.length, 1)
+  release({ closed: true })
+  await settle()
+})
+
+test('the panel says why nothing was closed, or why the tab stayed, and the note goes away', async () => {
+  const cases = [
+    [{ closed: false, reason: 'draft' }, '入力欄に書きかけの文字があるため、閉じませんでした。'],
+    [{ closed: false, reason: 'working' }, 'エージェントが作業中のため、閉じませんでした。'],
+    [{ closed: false, reason: 'stale' }, 'セッションの状態が変わったため、閉じませんでした。'],
+    [{ closed: false, exited: true, reason: 'shell-busy' }, 'セッションは終了しました。タブでほかの処理が動いているため、タブは残しました。'],
+    [{ closed: false, exited: true, reason: 'shell-input' }, 'セッションは終了しました。タブに入力中の文字があるかもしれないため、タブは残しました。'],
+    [{ closed: false, exited: true, reason: 'remains' }, 'セッションは終了しました。タブは残っています。'],
+    [{ closed: false, reason: 'something-new' }, '閉じられませんでした。']
+  ]
+  for (const [result, text] of cases) {
+    const root = body(closeButton('s1'))
+    const clock = timers()
+    closeOnPress(root, async () => result, clock)
+    const button = root.querySelector('[data-close]')
+    button.click()
+    button.click()
+    await settle()
+    assert.equal(root.ownerDocument.querySelector('.note').textContent, text)
+    assert.equal(button.textContent, '閉じる', 'the button is ready again')
+    clock.run(NOTE_MS)
+    assert.equal(root.ownerDocument.querySelector('.note'), null, 'the note goes away')
+  }
+})
+
+test('a request that fails is reported as a failure, and the button is ready again', async () => {
+  const root = body(closeButton('s1'))
+  closeOnPress(root, async () => {
+    throw new Error('no connection')
+  }, timers())
+  const button = root.querySelector('[data-close]')
+  button.click()
+  button.click()
+  await settle()
+  assert.equal(root.ownerDocument.querySelector('.note').textContent, '閉じられませんでした。')
+  assert.ok(!button.disabled)
+})
+
+test('the pressed button keeps its question across the patches of the body', () => {
+  const html = `<div class="row">${closeButton('s1')}</div>`
+  const root = body(html)
+  const presses = closeOnPress(root, async () => ({ closed: true }), timers())
+  root.querySelector('[data-close]').click()
+  patchChildren(root, html)
+  assert.equal(root.querySelector('[data-close]').textContent, '閉じる', 'a patch brings the worker\'s label back')
+  presses.restore()
+  assert.equal(root.querySelector('[data-close]').textContent, '本当に閉じる？（未完了 3）')
+  assert.ok(root.querySelector('[data-close]').classList.contains('armed'))
+  // The question is about that session at that time; the same session waiting again is another one.
+  patchChildren(root, `<div class="row">${closeButton('s1', 9000)}</div>`)
+  presses.restore()
+  assert.equal(root.querySelector('[data-close]').textContent, '閉じる')
+})
+
+test('pressing the close button inside a row head does not open the workspace', () => {
+  const root = body(`<div class="head" data-open="/work/app"><span class="name">app</span>${closeButton('s1')}</div>`)
+  const opened = []
+  openOnPress(root, (path) => opened.push(path))
+  root.querySelector('[data-close]').click()
+  assert.deepEqual(opened, [])
+  root.querySelector('.name').click()
+  assert.deepEqual(opened, ['/work/app'])
 })
 
 test('pressing the refresh button spins while running and ignores double clicks until done', async () => {

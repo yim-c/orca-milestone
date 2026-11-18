@@ -120,6 +120,33 @@ test('the badge shows on the session of the focused workspace and on the row of 
   assert.ok(renderBody(working).includes('class="working"') && !renderBody(working).includes('class="idle"'), 'a row at work shows that, not the wait')
 })
 
+const SESSION = '6f0b4a52-1c3d-4e8f-9a7b-2d5c8e1f3a90'
+const closable = (extra = {}) => idleSession({ listId: SESSION, source: 'claude', idleAt: 123456, ...extra })
+
+test('a session with the badge can be closed from its list and from its row, and nothing else can', () => {
+  const tasks = [task(1, 'a', 'completed'), task(2, 'b', 'pending'), task(3, 'c', 'in_progress')]
+  const model = buildModel(workspace, [closable({ tasks })], [doneAgent()])
+  assert.deepEqual(model.sessions[0].close, { sessionId: SESSION, since: 123456, unfinished: 2 })
+  assert.ok(renderBody(model).includes(`<button type="button" class="close-session" data-close="${SESSION}" data-since="123456" data-unfinished="2">閉じる</button>`))
+
+  const close = (session, agents = [doneAgent()]) => buildModel(workspace, [session], agents).sessions[0].close
+  assert.equal(close(closable({ source: undefined })), null, 'not a Claude session')
+  assert.equal(close(closable({ source: 'mcp' })), null)
+  assert.equal(close(closable({ listId: 'session-160361c4' })), null, 'the list of a team')
+  assert.equal(close(closable({ idleAt: null })), null)
+  assert.equal(close(closable({ idleMs: HOUR })), null, 'not waiting for long')
+  assert.equal(close(closable(), [doneAgent({ state: 'working' })]), null, 'Orca says it works')
+  assert.ok(!renderBody(buildModel(workspace, [closable({ idleMs: HOUR })], [doneAgent()])).includes('data-close'))
+
+  const other = closable({ cwd: '/work/other', tabId: 't9', idleMs: 13 * HOUR, tasks })
+  const agents = [doneAgent({ workspace: 'other', path: '/work/other', focused: false, tabId: 't9' })]
+  const rowModel = buildModel(workspace, [other], agents)
+  assert.deepEqual(rowModel.others.rows[0].close, { sessionId: SESSION, since: 123456, unfinished: 2 })
+  const html = renderBody(rowModel)
+  assert.ok(html.indexOf('class="close-session"') > html.indexOf('class="idle"'), 'after the badge, in the head of the row')
+  assert.ok(html.indexOf('class="close-session"') < html.indexOf('class="of"'))
+})
+
 test('buildModel reports no workspace and no tasks', () => {
   assert.equal(buildModel(null, []).kind, 'no-workspace')
   const model = buildModel({ ...workspace, agentStates: [] }, [])
