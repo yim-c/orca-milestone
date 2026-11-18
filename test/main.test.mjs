@@ -22,7 +22,7 @@ test('registers the commands and events declared in the manifest, and starts not
   })
   assert.deepEqual(commands, manifest.contributes.commands.map((command) => command.id))
   assert.deepEqual(events, manifest.contributes.events.map((event) => event.on))
-  assert.deepEqual(handlers, ['view.get', 'view.refresh', 'workspace.open', 'next.send', 'tab.select', 'others.toggle'])
+  assert.deepEqual(handlers, ['view.get', 'view.refresh', 'workspace.open', 'next.send', 'tab.select', 'others.toggle', 'session.close'])
   assert.deepEqual(hooks, manifest.contributes.hooks.map((hook) => hook.event))
 })
 

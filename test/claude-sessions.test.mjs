@@ -12,6 +12,7 @@ import {
   readIdleSince,
   readPromptBeforeTask,
   readRunningSessionIds,
+  readRunningSessions,
   readTasksFromTranscript,
   readTaskList,
   readTranscriptHead,
@@ -33,6 +34,16 @@ test('readIdleSince gives when each running session that waits for the user star
   await writeFile(join(dir, 'notes.txt'), 'idle')
   assert.deepEqual([...(await readIdleSince(dir))], [[SESSION_A, 1000]])
   assert.deepEqual([...(await readIdleSince(join(home, 'missing')))], [])
+})
+
+test('readRunningSessions carries the status of each session and when it changed', async () => {
+  const home = await makeHome()
+  const dir = join(home, '.claude', 'sessions')
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, '1.json'), JSON.stringify({ pid: process.pid, sessionId: SESSION_A, cwd: '/work/a', status: 'idle', statusUpdatedAt: 1234 }))
+  await writeFile(join(dir, '2.json'), JSON.stringify({ pid: process.pid, sessionId: SESSION_B, cwd: '/work/b' }))
+  const found = (await readRunningSessions(dir)).sort((a, b) => a.cwd.localeCompare(b.cwd))
+  assert.deepEqual(found.map((entry) => [entry.cwd, entry.status, entry.statusUpdatedAt]), [['/work/a', 'idle', 1234], ['/work/b', null, null]])
 })
 
 test('valueOfList finds a session by its id, and a team lead by the id prefix of its list', () => {

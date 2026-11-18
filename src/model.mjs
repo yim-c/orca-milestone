@@ -19,6 +19,18 @@ function idleHours(session, agents) {
   return Math.floor(session.idleMs / HOUR_MS)
 }
 
+const SESSION_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+
+/**
+ * What the panel needs to offer closing a session that wears the badge: its id, the time it started
+ * waiting, which the worker checks again when the button is pressed, and how many tasks are
+ * unfinished. Only a Claude session of its own can be closed, not a team's list or another agent.
+ */
+function closeOf(session, idle, counts) {
+  if (!idle || session.source !== 'claude' || !SESSION_ID.test(session.listId) || !Number.isFinite(session.idleAt)) return null
+  return { sessionId: session.listId, since: session.idleAt, unfinished: counts.total - counts.done }
+}
+
 export function isInside(path, root) {
   return path === root || path.startsWith(root.endsWith('/') ? root : `${root}/`)
 }
@@ -77,6 +89,7 @@ function buildOthers(agents, sessions, workspacePaths) {
       (s) => s.cwd && s.tasks.length > 0 && ownerWorkspacePath(s.cwd, workspacePaths) === entry.path
     )
     const counts = session ? progress(session.tasks) : { done: 0, total: 0, tasks: [] }
+    const idle = session ? idleHours(session, agents) : null
     return {
       workspace: entry.workspace,
       path: entry.path,
@@ -86,7 +99,8 @@ function buildOthers(agents, sessions, workspacePaths) {
       working: entry.working && !entry.needsUser,
       background: entry.background && !entry.working && !entry.needsUser,
       since: entry.since,
-      idle: session ? idleHours(session, agents) : null,
+      idle,
+      close: closeOf(session, idle, counts),
       updatedAt: session?.updatedAt ?? 0,
       goal: session?.goal ?? null,
       ...counts
@@ -159,7 +173,11 @@ export function buildModel(workspace, sessions, agents = [], offers = [], select
     : workspaceSessions
   const mine = matching
     .slice(0, MAX_SESSIONS)
-    .map((session) => ({ listId: session.listId, goal: session.goal, idle: idleHours(session, agents), ...progress(session.tasks) }))
+    .map((session) => {
+      const counts = progress(session.tasks)
+      const idle = idleHours(session, agents)
+      return { listId: session.listId, goal: session.goal, idle, close: closeOf(session, idle, counts), ...counts }
+    })
   // With a tab selected, the status is that tab's agents'; Orca names the tab of each in agentsByTab.
   const inTab = activeTabId && workspace.agentsByTab ? workspace.agentsByTab.filter((entry) => entry.tabId === activeTabId) : null
   const states = inTab ? inTab.map((entry) => entry.state) : (workspace.agentStates ?? [])

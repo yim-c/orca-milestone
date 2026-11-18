@@ -4,6 +4,7 @@
 // stopped as idle, which would end its watch on the task lists.
 import { scrollExpandedRows } from './expand.mjs'
 import { sendOnPress } from './next.mjs'
+import { closeOnPress } from './close.mjs'
 import { openOnPress } from './open.mjs'
 import { toggleOthersOnPress } from './others.mjs'
 import { patchChildren } from './patch.mjs'
@@ -20,12 +21,15 @@ const presses = sendOnPress(document.body, (request) => window.orca.plugin.reque
 let loaded = false
 
 const { plugin } = window.orca
+// Declared before the first body arrives, as it keeps which close button was pressed across patches.
+const closing = closeOnPress(document.body, (request) => plugin.request('session.close', request))
 
 plugin.on('view.changed', ({ html }) => {
   pushes += 1
   loaded = true
   patchChildren(document.body, html)
   presses.restore()
+  closing.restore()
 })
 
 async function load() {
@@ -36,6 +40,7 @@ async function load() {
     if (pushes === seen) {
       patchChildren(document.body, html)
       presses.restore()
+      closing.restore()
     }
     loaded = true
   } catch (error) {

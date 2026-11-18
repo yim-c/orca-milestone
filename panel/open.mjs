@@ -3,6 +3,8 @@
 
 export function openOnPress(root, open) {
   root.addEventListener('click', (event) => {
+    // A button inside the head, such as the one that closes a session, does its own job.
+    if (event.target.closest('[data-close]')) return
     const head = event.target.closest('[data-open]')
     if (head) open(head.getAttribute('data-open'))
   })

@@ -163,7 +163,9 @@ export async function readWorkspaces(cli, run = runOrca, readers = {}) {
         background: agent.background === true,
         since: agent.stateStartedAt ?? null,
         // The terminal tab of the agent, which is how a Claude session is matched with it.
-        tabId: agent.paneKey?.split(':')[0] ?? null
+        tabId: agent.paneKey?.split(':')[0] ?? null,
+        // The pane itself, which is how the terminal of a session is found.
+        paneKey: agent.paneKey ?? null
       }))
     ),
     offers: await offersOf(worktrees, offerReaders)

@@ -43,12 +43,19 @@ function renderIdle(hours) {
   return hours ? `<span class="idle" title="入力待ちのまま${hours}時間">待機 ${hours}時間</span>` : ''
 }
 
+// The press is confirmed by the panel and checked again by the worker, which closes the session
+// only if it is still as it was shown at `since`.
+function renderClose(close) {
+  if (!close) return ''
+  return `<button type="button" class="close-session" data-close="${escape(close.sessionId)}" data-since="${close.since}" data-unfinished="${close.unfinished}">閉じる</button>`
+}
+
 function renderSession(session) {
   const percent = session.total === 0 ? 0 : Math.round((session.done / session.total) * 100)
   const goal = session.goal ? `<p class="goal">${escape(clip(session.goal, GOAL_MAX))}</p>` : ''
   // The key tells the panel this is another list, which it shows at once instead of animating.
   const key = escape(`${session.listId}\n${clip(session.goal ?? '', GOAL_MAX)}`)
-  return `<section data-key="${key}">${goal}<div class="count"><span>マイルストーン${renderIdle(session.idle)}</span><strong>${session.done} / ${session.total}</strong></div>
+  return `<section data-key="${key}">${goal}<div class="count"><span>マイルストーン${renderIdle(session.idle)}${renderClose(session.close)}</span><strong>${session.done} / ${session.total}</strong></div>
 <div class="bar"><div style="width:${percent}%"></div></div>
 <ol>${session.tasks.map(renderTask).join('')}</ol></section>`
 }
@@ -129,7 +136,7 @@ function renderRow(row) {
     : running
       ? '<span class="dot running"></span>'
       : '<span class="dot"></span>'
-  const head = `<div class="top">${mark}<span class="name">${escape(row.workspace)}${repo}</span>${badge}${of}</div>${bar}`
+  const head = `<div class="top">${mark}<span class="name">${escape(row.workspace)}${repo}</span>${badge}${renderClose(row.close)}${of}</div>${bar}`
   const key = escape(`${row.workspace}\n${row.repo ?? ''}\n${clip(row.goal ?? '', GOAL_MAX)}`)
   const button = `<div class="head" role="button" tabindex="0" data-open="${escape(row.path)}">${head}</div>`
   if (row.total === 0) return `<li class="row ${row.kind}" data-key="${key}">${button}</li>`

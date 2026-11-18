@@ -367,7 +367,7 @@ async function allowedOf(worktree, readLaunchInfo, readAllowed) {
 }
 
 /** A workspace not on screen has no tab for its pane, and its terminal only records the key. */
-function isPane(terminal, paneKey) {
+export function isPane(terminal, paneKey) {
   return terminal.recordedPaneKey === paneKey || `${terminal.tabId}:${terminal.leafId}` === paneKey
 }
 
