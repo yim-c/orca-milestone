@@ -1,7 +1,8 @@
 import assert from 'node:assert/strict'
-import { appendFile, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { test } from 'node:test'
+import { readSessionTabs, tabOfList } from '../src/claude-sessions.mjs'
 import { createMilestoneWorker } from '../src/milestone-worker.mjs'
 import { SESSION_A, SESSION_B, makeHome, markRunning, task, taskCalls, writeTasks, writeTranscript } from './helpers.mjs'
 
@@ -304,4 +305,65 @@ test('openWorkspace opens the listed workspace at the path, and only logs a miss
   fail = true
   assert.deepEqual(await worker.openWorkspace('/work/a'), { opened: false })
   assert.match(logs.join('\n'), /could not open the workspace: refused/)
+})
+
+// Registers a session as running with its own pid (the test process or its parent), as two real ones differ.
+async function runAs(home, sessionId, pid, startedAt) {
+  const dir = join(home, '.claude', 'sessions')
+  await mkdir(dir, { recursive: true })
+  await writeFile(join(dir, `${pid}.json`), JSON.stringify({ pid, sessionId, startedAt }))
+}
+
+test('readSessionTabs asks each process once, drops the gone ones and finds a team lead by its prefix', async () => {
+  const home = await makeHome()
+  const root = join(home, '.claude', 'sessions')
+  await runAs(home, SESSION_A, process.pid, 1)
+  await runAs(home, SESSION_B, process.ppid, 2)
+  const asked = []
+  const cache = new Map()
+  const readTab = async (pid) => {
+    asked.push(pid)
+    return pid === process.pid ? 'tab-a' : null
+  }
+
+  const tabs = await readSessionTabs(root, cache, readTab)
+  assert.deepEqual([...tabs], [[SESSION_A, 'tab-a']], 'a process outside Orca has no tab')
+  await readSessionTabs(root, cache, readTab)
+  assert.equal(asked.length, 2, 'the second read is answered from the cache')
+
+  assert.equal(tabOfList(SESSION_A, tabs), 'tab-a')
+  assert.equal(tabOfList(`session-${SESSION_A.slice(0, 8)}`, tabs), 'tab-a')
+  assert.equal(tabOfList(SESSION_B, tabs), null)
+
+  await rm(join(root, `${process.ppid}.json`))
+  await readSessionTabs(root, cache, readTab)
+  assert.equal(cache.size, 1, 'a process that ended leaves the cache')
+})
+
+test('a list keeps its tab from the process environment with no agent event, so a closed tab hides it', async () => {
+  const home = await makeHome()
+  const orca = fakeOrca()
+  await writeTranscript(home, SESSION_A, { cwd: '/work/app', prompt: 'Now', running: false })
+  await writeTasks(home, SESSION_A, [task(1, 'Current step', 'in_progress')])
+  await writeTranscript(home, SESSION_B, { cwd: '/work/app', prompt: 'Left behind', running: false })
+  await writeTasks(home, SESSION_B, [task(1, 'Old step', 'completed')])
+  await runAs(home, SESSION_A, process.pid, 1)
+  await runAs(home, SESSION_B, process.ppid, 2)
+
+  const worker = createMilestoneWorker({
+    orca,
+    home,
+    cli: 'orca',
+    readTab: async (pid) => (pid === process.pid ? 'tab-1' : 'tab-closed'),
+    readOrca: async () => ({
+      active: { path: '/work/app', displayName: 'app', agentStates: ['idle'], tabs: [{ tabId: 'tab-1', title: 'Now' }, { tabId: 'tab-2', title: 'Shell' }], uniqueAgentTabs: { claude: null, mcp: null } },
+      agents: []
+    }),
+    watchDir: () => {}
+  })
+
+  await worker.refresh(true)
+  const shown = orca.shown()
+  assert.ok(shown.includes('Current step'))
+  assert.ok(!shown.includes('Old step'), 'the list of the closed tab is hidden without any agent event')
 })
