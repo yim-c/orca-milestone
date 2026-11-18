@@ -77,22 +77,20 @@ function buildOthers(agents, sessions, workspacePaths) {
   })
   const rank = (row) =>
     row.kind === 'attention' ? 0 : row.done < row.total ? 1 : 2
+  // Those needing the user first, longest waiting first; then unfinished and then finished
+  // lists, most recently updated first.
+  const shown = rows
+    .filter((row) => !row.focused && (row.kind === 'attention' || row.total > 0))
+    .sort(
+      (a, b) =>
+        rank(a) - rank(b) ||
+        (a.kind === 'attention' ? a.since - b.since : b.updatedAt - a.updatedAt)
+    )
   return {
     attention: rows.filter((row) => row.kind === 'attention').length,
-    // Those needing the user first, longest waiting first; then unfinished and then finished
-    // lists, most recently updated first.
-    rows: rows
-      .filter(
-        (row) =>
-          !row.focused &&
-          (row.kind === 'attention' || row.total > 0)
-      )
-      .sort(
-        (a, b) =>
-          rank(a) - rank(b) ||
-          (a.kind === 'attention' ? a.since - b.since : b.updatedAt - a.updatedAt)
-      )
-      .slice(0, MAX_ROWS)
+    rows: shown.slice(0, MAX_ROWS),
+    // How many rows the limit leaves off, so the panel can say they exist.
+    more: Math.max(0, shown.length - MAX_ROWS)
   }
 }
 
@@ -136,10 +134,10 @@ export function buildModel(workspace, sessions, agents = [], offers = [], select
     // tab was closed. A list with no known tab stays, as there is nothing to tell it by.
     .filter((session) => tabs.length === 0 || !session.tabId || tabs.some((tab) => tab.tabId === session.tabId))
   const claimed = new Set(workspaceSessions.map((session) => session.tabId).filter(Boolean))
-  const mine = (activeTabId
+  const matching = activeTabId
     ? workspaceSessions.filter((session) => sessionTabId(session, workspace, claimed) === activeTabId)
     : workspaceSessions
-  )
+  const mine = matching
     .slice(0, MAX_SESSIONS)
     .map((session) => ({ listId: session.listId, goal: session.goal, ...progress(session.tasks) }))
   // With a tab selected, the status is that tab's agents'; Orca names the tab of each in agentsByTab.
@@ -160,6 +158,7 @@ export function buildModel(workspace, sessions, agents = [], offers = [], select
           ? background ? 'background' : 'idle'
           : 'none',
     sessions: mine,
+    moreSessions: Math.max(0, matching.length - MAX_SESSIONS),
     next: nextOf(offers, workspace.path, activeTabId),
     others
   }

@@ -135,11 +135,16 @@ function renderRow(row) {
 <div class="detail"><div class="inner">${goal}<ol>${row.tasks.map(renderTask).join('')}</ol></div></div></li>`
 }
 
+// The limits leave some lists or rows off; this says how many, so they are not missed.
+function renderMore(count) {
+  return count > 0 ? `<p class="more">ほか ${count} 件</p>` : ''
+}
+
 function renderOthers(others) {
   if (!others || others.rows.length === 0) return ''
   const attention = others.attention > 0 ? `<span class="attention">要確認 ${others.attention}</span>` : ''
   return `<div class="others"><h2><span>ほかのワークスペース</span>${attention}</h2>
-<ol class="rows">${others.rows.map(renderRow).join('')}</ol></div>`
+<ol class="rows">${others.rows.map(renderRow).join('')}</ol>${renderMore(others.more)}</div>`
 }
 
 export function renderBody(model) {
@@ -174,5 +179,5 @@ function renderFocused(model) {
       : 'このワークスペースのエージェントはまだタスクを作っていません。'
     return `${header}<p class="empty">${empty}</p>${renderNext(model.next)}`
   }
-  return header + model.sessions.map(renderSession).join('') + renderNext(model.next)
+  return header + model.sessions.map(renderSession).join('') + renderMore(model.moreSessions) + renderNext(model.next)
 }
