@@ -235,6 +235,185 @@ test('a refresh that does not ask Orca does not change the out of date mark', as
   assert.ok(orca.shown().includes('class="stale"'))
 })
 
+/** A worker whose workspace has two terminal tabs and whose selected tab, as Orca saved it, is set by the test. */
+function followWorker({ orca, home, shown, clock = { now: 1000 }, calls = [] }) {
+  return createMilestoneWorker({
+    orca,
+    home,
+    cli: 'orca',
+    now: () => clock.now,
+    readOrca: async () => ({
+      active: { path: '/work/app', displayName: 'app', agentStates: [], tabs: [{ tabId: 'tab-1', title: 'One' }, { tabId: 'tab-2', title: 'Two' }], uniqueAgentTabs: {} },
+      agents: []
+    }),
+    readActive: async (path) => {
+      calls.push(path)
+      if (shown.error) throw new Error(shown.error)
+      return shown.tab
+    },
+    runCli: async (_cli, args) =>
+      args[1] === 'list'
+        ? { ok: true, result: { terminals: [{ handle: 'h1', tabId: 'tab-1', leafId: 'a' }, { handle: 'h2', tabId: 'tab-2', leafId: 'b' }] } }
+        : { ok: true, result: {} },
+    watchDir: () => {}
+  })
+}
+
+const activeChip = (html) => html.match(/class="tab active" data-tab="([^"]*)"/)?.[1]
+
+test('the chips follow the tab Orca shows, from the first refresh on', async () => {
+  const home = await makeHome()
+  const orca = fakeOrca()
+  const calls = []
+  const shown = { tab: 'tab-2' }
+  const worker = followWorker({ orca, home, shown, calls })
+  const realSetInterval = globalThis.setInterval
+  globalThis.setInterval = (...args) => realSetInterval(...args).unref()
+  try {
+    await worker.refresh(true)
+    assert.equal(activeChip(orca.shown()), 'tab-2')
+    assert.deepEqual(calls, ['/work/app'])
+
+    shown.tab = 'tab-1'
+    await worker.followNow()
+    assert.equal(activeChip(orca.shown()), 'tab-1')
+
+    const posts = orca.posts.length
+    await worker.followNow()
+    assert.equal(orca.posts.length, posts, 'a look that finds the same tab posts nothing')
+  } finally {
+    globalThis.setInterval = realSetInterval
+  }
+})
+
+test('the chip for all tabs stops following, and a chip for one tab follows again once Orca shows it', async () => {
+  const home = await makeHome()
+  const orca = fakeOrca()
+  const clock = { now: 1000 }
+  const shown = { tab: 'tab-2' }
+  const worker = followWorker({ orca, home, shown, clock })
+  await worker.refresh(true)
+  assert.equal(activeChip(orca.shown()), 'tab-2')
+
+  await worker.selectTab(null)
+  assert.equal(activeChip(orca.shown()), '', 'all tabs')
+  shown.tab = 'tab-1'
+  await worker.followNow()
+  assert.equal(activeChip(orca.shown()), '', 'not following, so Orca switching tabs changes nothing')
+
+  // Orca still has tab-1 saved right after the press: the pressed tab stays until it is shown or the grace is over.
+  shown.tab = 'tab-1'
+  await worker.selectTab('tab-2')
+  await worker.followNow()
+  assert.equal(activeChip(orca.shown()), 'tab-2', 'the press is not undone by the old state')
+  shown.tab = 'tab-2'
+  await worker.followNow()
+  shown.tab = 'tab-1'
+  await worker.followNow()
+  assert.equal(activeChip(orca.shown()), 'tab-1', 'once Orca showed the pressed tab, it is followed again')
+
+  // If Orca never shows the pressed tab, the chip goes back to the tab that is shown.
+  await worker.selectTab('tab-2')
+  shown.tab = 'tab-1'
+  await worker.followNow()
+  assert.equal(activeChip(orca.shown()), 'tab-2')
+  clock.now += 5000
+  await worker.followNow()
+  assert.equal(activeChip(orca.shown()), 'tab-1')
+})
+
+test('a tab that is not a terminal tab of the workspace leaves the selection as it is', async () => {
+  const home = await makeHome()
+  const orca = fakeOrca()
+  const shown = { tab: 'tab-2' }
+  const worker = followWorker({ orca, home, shown })
+  await worker.refresh(true)
+  shown.tab = 'browser-tab'
+  await worker.followNow()
+  assert.equal(activeChip(orca.shown()), 'tab-2')
+  shown.tab = null
+  await worker.followNow()
+  assert.equal(activeChip(orca.shown()), 'tab-2')
+})
+
+test('when the saved state cannot be read the chips stay as they are, with one log line until it works again', async () => {
+  const home = await makeHome()
+  const logs = []
+  const orca = { ...fakeOrca(), log: (line) => logs.push(line) }
+  const shown = { error: 'unable to open database file' }
+  const worker = followWorker({ orca, home, shown })
+  await worker.refresh(true)
+  await worker.followNow()
+  await worker.followNow()
+  assert.equal(activeChip(orca.shown()), '', 'no tab is selected on its own: all tabs stay')
+  assert.equal(logs.filter((line) => line.includes('could not read the selected tab')).length, 1)
+  assert.ok(logs[0].includes('unable to open database file'))
+
+  await worker.selectTab('tab-2')
+  assert.equal(activeChip(orca.shown()), 'tab-2', 'the chips still work by hand')
+
+  shown.error = null
+  shown.tab = 'tab-1'
+  await worker.followNow()
+  await worker.followNow()
+  assert.equal(activeChip(orca.shown()), 'tab-2', 'the pressed tab holds until its grace is over')
+
+  shown.tab = 'tab-2'
+  await worker.followNow()
+  shown.tab = 'tab-1'
+  await worker.followNow()
+  assert.equal(activeChip(orca.shown()), 'tab-1', 'following works again')
+
+  shown.error = 'unable to open database file'
+  await worker.followNow()
+  assert.equal(logs.filter((line) => line.includes('could not read the selected tab')).length, 2, 'a new failure is logged again')
+})
+
+test('the follow timer runs only while the chips follow and the workspace has several tabs', async () => {
+  const home = await makeHome()
+  const orca = fakeOrca()
+  const started = []
+  const cleared = []
+  const realSetInterval = globalThis.setInterval
+  const realClearInterval = globalThis.clearInterval
+  globalThis.setInterval = (...args) => {
+    const timer = realSetInterval(...args)
+    started.push(timer)
+    return timer
+  }
+  globalThis.clearInterval = (timer) => {
+    cleared.push(timer)
+    return realClearInterval(timer)
+  }
+  try {
+    const worker = followWorker({ orca, home, shown: { tab: 'tab-1' } })
+    await worker.refresh(true)
+    await worker.refresh(true)
+    assert.equal(started.length, 1, 'one timer, however often it refreshes')
+    assert.equal(cleared.length, 0)
+
+    await worker.selectTab(null)
+    assert.deepEqual(cleared, started, 'all tabs stops it')
+    await worker.selectTab('tab-1')
+    assert.equal(started.length, 2, 'a chip for one tab starts it again')
+
+    const single = createMilestoneWorker({
+      orca: fakeOrca(),
+      home,
+      cli: 'orca',
+      readOrca: async () => ({ active: { path: '/work/app', displayName: 'app', agentStates: [], tabs: [{ tabId: 'tab-1', title: 'One' }] }, agents: [] }),
+      readActive: async () => assert.fail('one tab has nothing to follow'),
+      watchDir: () => {}
+    })
+    await single.refresh(true)
+    assert.equal(started.length, 2, 'no timer for a workspace with one tab')
+  } finally {
+    started.forEach(realClearInterval)
+    globalThis.setInterval = realSetInterval
+    globalThis.clearInterval = realClearInterval
+  }
+})
+
 test('toggling the other workspaces folds them away and shows them again, and a refresh keeps the choice', async () => {
   const home = await makeHome()
   const orca = fakeOrca()

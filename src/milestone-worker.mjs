@@ -23,6 +23,7 @@ import {
   turnEnded,
   pendingQuestion
 } from './claude-sessions.mjs'
+import { profileStatePath, readActiveTab } from './active-tab.mjs'
 import { readCodexProgress } from './codex-progress.mjs'
 import { buildModel } from './model.mjs'
 import { createNextSender, readPaneScreen, readTerminalScreen } from './next-actions.mjs'
@@ -38,6 +39,10 @@ const TASK_LIST_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000
 const SYNC_MS = 30_000
 const DEBOUNCE_MS = 150
 const REQUEST_RETRY_MS = 30_000
+// How often the tab Orca shows is read while the chips follow it, and how long after a chip press
+// Orca may take to show that tab before what it saved is believed again.
+const FOLLOW_MS = 1500
+const SWITCH_GRACE_MS = 4000
 
 export function createMilestoneWorker({
   orca,
@@ -47,6 +52,7 @@ export function createMilestoneWorker({
   runCli = runOrca,
   now = Date.now,
   readTab = readProcessTab,
+  readActive = (workspacePath) => readActiveTab(profileStatePath(home), workspacePath),
   watchDir = (dir, onChange) => watch(dir, { recursive: true }, onChange)
 }) {
   const paths = claudePaths(home)
@@ -99,6 +105,12 @@ export function createMilestoneWorker({
   // The person folded the other workspaces away. The worker keeps it, so a panel that is
   // recreated, as Orca does when its sidebar tab is switched, comes back the same.
   let othersCollapsed = false
+  // While following, the chips show the tab Orca shows. A chip for all tabs stops it and a chip for
+  // one tab starts it again. After a press, `pendingTab` holds the tab Orca is being asked to show.
+  let follow = true
+  let pendingTab = null
+  let followError = null
+  let followTimer = null
 
   async function headOf(listId) {
     if (heads.has(listId)) return heads.get(listId)
@@ -225,6 +237,55 @@ export function createMilestoneWorker({
     publish(renderBody(buildModel(workspace, lastSessions, agents, offers, selectedTabId, stale, othersCollapsed)))
   }
 
+  /**
+   * Selects the tab Orca shows, when the chips follow it and the workspace has several tabs. A tab
+   * that is not one of the workspace's terminal tabs, such as a browser tab, leaves the selection.
+   * When the saved state cannot be read, the chips stay as they are and one line is logged for as
+   * long as it keeps failing.
+   */
+  async function followActiveTab() {
+    if (!follow || !(workspace?.tabs?.length > 1)) return
+    let active
+    try {
+      active = await readActive(workspace.path)
+      followError = null
+    } catch (error) {
+      if (error.message !== followError) {
+        followError = error.message
+        orca.log(`milestone: could not read the selected tab, so the chips stay as they are: ${error.message}`)
+      }
+      return
+    }
+    if (!active || !workspace.tabs.some((tab) => tab.tabId === active)) return
+    if (pendingTab) {
+      // Orca may not have shown the tab that was pressed yet; what it saved is old until it does.
+      if (active !== pendingTab.tabId && now() < pendingTab.until) return
+      pendingTab = null
+    }
+    selectedTabId = active
+  }
+
+  /** One look at the tab Orca shows; the panel is posted again only when the selection moved. */
+  async function followNow() {
+    const before = selectedTabId
+    await followActiveTab()
+    if (selectedTabId !== before) publishModel()
+  }
+
+  // The timer runs only while it has something to do: the chips follow and there are chips.
+  function syncFollowTimer() {
+    const wanted = follow && workspace?.tabs?.length > 1
+    if (wanted && !followTimer) {
+      followTimer = setInterval(() => {
+        followNow().catch((error) => orca.log(`milestone: could not follow the selected tab: ${error.message}`))
+      }, FOLLOW_MS)
+      followTimer.unref?.()
+    } else if (!wanted && followTimer) {
+      clearInterval(followTimer)
+      followTimer = null
+    }
+  }
+
   async function refreshOnce(askOrca) {
     const previousPath = workspace?.path ?? null
     if (askOrca || !workspace) {
@@ -238,9 +299,14 @@ export function createMilestoneWorker({
         orca.log(`milestone: could not read the workspaces: ${error.message}`)
       }
     }
-    if ((workspace?.path ?? null) !== previousPath) selectedTabId = null
+    if ((workspace?.path ?? null) !== previousPath) {
+      selectedTabId = null
+      pendingTab = null
+    }
+    await followActiveTab()
     lastSessions = await allSessions()
     publishModel()
+    syncFollowTimer()
   }
 
   /**
@@ -260,9 +326,17 @@ export function createMilestoneWorker({
   }
 
   async function selectTab(tabId) {
-    selectedTabId = typeof tabId === 'string' && tabId ? tabId : null
+    const wanted = typeof tabId === 'string' && tabId ? tabId : null
+    selectedTabId = wanted
+    // The chip for all tabs is the way to stop following; a chip for one tab follows again.
+    follow = wanted !== null
+    pendingTab = null
     publishModel()
-    if (selectedTabId) await showTab(selectedTabId)
+    syncFollowTimer()
+    if (selectedTabId) {
+      pendingTab = { tabId: selectedTabId, until: now() + SWITCH_GRACE_MS }
+      await showTab(selectedTabId)
+    }
     return { selectedTabId }
   }
 
@@ -356,5 +430,5 @@ export function createMilestoneWorker({
     return started
   }
 
-  return { start, refresh, schedule, agentChanged, view, openWorkspace, sendNext, selectTab, toggleOthers }
+  return { start, refresh, schedule, agentChanged, view, openWorkspace, sendNext, selectTab, toggleOthers, followNow }
 }
