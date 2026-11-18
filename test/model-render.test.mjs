@@ -26,6 +26,36 @@ test('buildModel keeps sessions with tasks inside the focused workspace', () => 
   )
 })
 
+const lists = (count) =>
+  Array.from({ length: count }, (_, i) => ({ listId: `l${i}`, cwd: '/work/app', goal: `Goal ${i}`, tasks: [task(1, 'x', 'pending')] }))
+
+test('sessions past the limit are counted and the panel says how many are left off', () => {
+  const over = buildModel(workspace, lists(5))
+  assert.equal(over.sessions.length, 3)
+  assert.equal(over.moreSessions, 2)
+  assert.ok(renderBody(over).includes('<p class="more">ほか 2 件</p>'))
+
+  const exact = buildModel(workspace, lists(3))
+  assert.equal(exact.moreSessions, 0)
+  assert.ok(!renderBody(exact).includes('class="more"'))
+})
+
+test('other workspaces past the limit are counted and the panel says how many are left off', () => {
+  const others = (count) => {
+    const agents = Array.from({ length: count }, (_, i) => ({ workspace: `w${i}`, path: `/other/${i}`, focused: false, state: 'idle' }))
+    const sessions = agents.map((agent, i) => ({ listId: `o${i}`, cwd: agent.path, goal: `Goal ${i}`, tasks: [task(1, 'x', 'pending')], updatedAt: i }))
+    return buildModel(workspace, sessions, agents)
+  }
+  const over = others(10)
+  assert.equal(over.others.rows.length, 8)
+  assert.equal(over.others.more, 2)
+  assert.ok(renderBody(over).includes('<p class="more">ほか 2 件</p>'))
+
+  const exact = others(8)
+  assert.equal(exact.others.more, 0)
+  assert.ok(!renderBody(exact).includes('class="more"'))
+})
+
 test('buildModel reports no workspace and no tasks', () => {
   assert.equal(buildModel(null, []).kind, 'no-workspace')
   const model = buildModel({ ...workspace, agentStates: [] }, [])
