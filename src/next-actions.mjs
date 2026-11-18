@@ -26,7 +26,7 @@ const OPTIONS_MAX = 9
 const QUESTIONS_MAX = 4
 const NEXT_BLOCK = /```next[ \t]*\r?\n([\s\S]*?)\r?\n?```\s*$/
 const CONTROL = /[\u0000-\u001f\u007f]/
-const TRACKED_AGENTS = new Set(['claude', 'codex', 'antigravity', 'gemini', 'opencode'])
+const TRACKED_AGENTS = new Set(['claude', 'codex', 'antigravity', 'gemini', 'opencode', 'opencode2'])
 const PERMISSION_STATES = ['waiting', 'permission']
 const USED_MAX = 256
 const SUBMIT_WAIT_SECONDS = '8'
@@ -99,7 +99,7 @@ export function parseSuggestions(message) {
 function soleAgent(worktree) {
   if (worktree.isArchived) return null
   const agents = (worktree.agents ?? []).filter(
-    (agent) => TRACKED_AGENTS.has(agent.agentType) && !agent.parentPaneKey && agent.hasLivePty === true
+    (agent) => TRACKED_AGENTS.has(agent.agentType) && !agent.parentPaneKey && (agent.hasLivePty === true || agent.hasLivePty === null)
   )
   return agents.length === 1 ? agents[0] : null
 }
