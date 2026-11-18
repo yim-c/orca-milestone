@@ -120,6 +120,9 @@ export function buildModel(workspace, sessions, agents = [], offers = [], select
   const workspaceSessions = sessions
     .filter((session) => session.cwd && ownerWorkspacePath(session.cwd, workspacePaths) === workspace.path)
     .filter((session) => session.tasks.length > 0)
+    // A list whose tab is known but no longer open belongs to an agent left running after its
+    // tab was closed. A list with no known tab stays, as there is nothing to tell it by.
+    .filter((session) => tabs.length === 0 || !session.tabId || tabs.some((tab) => tab.tabId === session.tabId))
   const claimed = new Set(workspaceSessions.map((session) => session.tabId).filter(Boolean))
   const mine = (activeTabId
     ? workspaceSessions.filter((session) => sessionTabId(session, workspace, claimed) === activeTabId)

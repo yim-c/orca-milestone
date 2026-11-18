@@ -241,3 +241,15 @@ test('next offer follows the selected tab', () => {
   assert.equal(buildModel(tabbedWorkspace, [], [], [offers[0]], 'tab-1').next, null)
   assert.equal(buildModel(tabbedWorkspace, [], [], offers).next.id, 'o2')
 })
+
+test('a list whose tab is closed is hidden, one with no known tab stays', () => {
+  const open = { ...workspace, tabs: [{ tabId: 'tab-1', title: 'Open' }] }
+  const sessions = [
+    { listId: 'open', cwd: '/work/app', source: 'claude', tabId: 'tab-1', goal: 'Open', tasks: [task(1, 'a', 'in_progress')] },
+    { listId: 'closed', cwd: '/work/app', source: 'claude', tabId: 'tab-gone', goal: 'Closed', tasks: [task(1, 'b', 'completed')] },
+    { listId: 'unknown', cwd: '/work/app', source: 'claude', tabId: null, goal: 'Unknown', tasks: [task(1, 'c', 'pending')] }
+  ]
+  assert.deepEqual(buildModel(open, sessions).sessions.map((s) => s.listId), ['open', 'unknown'])
+  // Without a tab list (Orca could not read it) nothing is hidden.
+  assert.deepEqual(buildModel({ ...workspace, tabs: [] }, sessions).sessions.map((s) => s.listId), ['open', 'closed', 'unknown'])
+})
