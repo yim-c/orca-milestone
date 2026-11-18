@@ -141,7 +141,10 @@ export function buildModel(workspace, sessions, agents = [], offers = [], select
   )
     .slice(0, MAX_SESSIONS)
     .map((session) => ({ listId: session.listId, goal: session.goal, ...progress(session.tasks) }))
-  const states = workspace.agentStates ?? []
+  // With a tab selected, the status is that tab's agents'; Orca names the tab of each in agentsByTab.
+  const inTab = activeTabId && workspace.agentsByTab ? workspace.agentsByTab.filter((entry) => entry.tabId === activeTabId) : null
+  const states = inTab ? inTab.map((entry) => entry.state) : (workspace.agentStates ?? [])
+  const background = inTab ? inTab.some((entry) => entry.background) : workspace.background
   return {
     kind: mine.length > 0 ? 'sessions' : 'no-tasks',
     workspace: workspace.displayName,
@@ -152,7 +155,7 @@ export function buildModel(workspace, sessions, agents = [], offers = [], select
       : states.includes('blocked') || states.includes('waiting')
         ? 'waiting'
         : states.length > 0
-          ? workspace.background ? 'background' : 'idle'
+          ? background ? 'background' : 'idle'
           : 'none',
     sessions: mine,
     next: nextOf(offers, workspace.path, activeTabId),

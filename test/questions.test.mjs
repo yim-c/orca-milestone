@@ -313,3 +313,14 @@ test('in an agent team, the lead stands for the workspace and its teammates go u
   const other = { ...worktree, agents: [claude('mate1'), { ...lead, paneKey: 'other:lead' }] }
   assert.equal(joinTeams([other], [{ tabId: 'other', leafId: 'lead', agentIdentity: 'claude-agent-teams' }])[0], other, 'a Claude in another tab is no teammate')
 })
+
+test('the focused workspace lists each agent with its tab, for the status of a selected tab', async () => {
+  const { readWorkspaces } = await import('../src/orca-cli.mjs')
+  const agent = (paneKey, state, extra = {}) => ({ agentType: 'claude', state, paneKey, hasLivePty: true, stateStartedAt: 1, ...extra })
+  const worktrees = [{ path: '/a', displayName: 'a', isActive: true, agents: [agent('tab-1:leaf', 'working'), agent('tab-2:leaf', 'done', { background: true })] }]
+  const read = await readWorkspaces('orca', async () => ({ ok: true, result: { worktrees } }))
+  assert.deepEqual(read.active.agentsByTab, [
+    { tabId: 'tab-1', state: 'working', background: false },
+    { tabId: 'tab-2', state: 'done', background: true }
+  ])
+})
