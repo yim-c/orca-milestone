@@ -143,8 +143,12 @@ function renderMore(count) {
 function renderOthers(others) {
   if (!others || others.rows.length === 0) return ''
   const attention = others.attention > 0 ? `<span class="attention">要確認 ${others.attention}</span>` : ''
-  return `<div class="others"><h2><span>ほかのワークスペース</span>${attention}</h2>
-<ol class="rows">${others.rows.map(renderRow).join('')}</ol>${renderMore(others.more)}</div>`
+  const open = !others.collapsed
+  // A real button, so the keyboard works; the arrow turns with aria-expanded.
+  const fold = `<button type="button" class="fold" data-others-toggle aria-expanded="${open}"><span class="chev" aria-hidden="true">▾</span>ほかのワークスペース</button>`
+  const body = open ? `<ol class="rows">${others.rows.map(renderRow).join('')}</ol>${renderMore(others.more)}` : ''
+  return `<div class="others"><h2>${fold}${attention}</h2>
+${body}</div>`
 }
 
 export function renderBody(model) {

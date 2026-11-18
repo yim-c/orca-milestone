@@ -120,10 +120,13 @@ function nextOf(offers, path, activeTabId) {
  * @param offers    [{ kind, id, path, ... }] what agents offer to choose from, see next-actions.mjs
  * @param selectedTabId optional Orca tabId to filter the focused workspace's sessions
  * @param stale true when the workspace and agents come from an earlier read, as the latest failed
+ * @param othersCollapsed true when the person folded the other workspaces away
  */
-export function buildModel(workspace, sessions, agents = [], offers = [], selectedTabId = null, stale = false) {
+export function buildModel(workspace, sessions, agents = [], offers = [], selectedTabId = null, stale = false, othersCollapsed = false) {
   const workspacePaths = [...new Set([workspace?.path, ...agents.map((agent) => agent.path)].filter(Boolean))]
-  const others = buildOthers(agents, sessions, workspacePaths)
+  // `collapsed` is the person's choice to fold the other workspaces away; the count of those
+  // needing the user stays in the heading either way.
+  const others = { ...buildOthers(agents, sessions, workspacePaths), collapsed: othersCollapsed }
   if (!workspace) return { kind: 'no-workspace', others }
   const tabs = workspace.tabs ?? []
   const activeTabId = selectedTabId && tabs.some((tab) => tab.tabId === selectedTabId) ? selectedTabId : null

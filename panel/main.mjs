@@ -5,6 +5,7 @@
 import { scrollExpandedRows } from './expand.mjs'
 import { sendOnPress } from './next.mjs'
 import { openOnPress } from './open.mjs'
+import { toggleOthersOnPress } from './others.mjs'
 import { patchChildren } from './patch.mjs'
 import { refreshOnPress } from './refresh.mjs'
 import { selectTabOnPress } from './tabs.mjs'
@@ -52,6 +53,11 @@ openOnPress(document.body, (path) => {
 selectTabOnPress(document.body, (tabId) => {
   plugin.request('tab.select', { tabId }).catch((error) => {
     console.warn(`milestone: tab.select failed: ${error.code ?? error.message}`)
+  })
+})
+toggleOthersOnPress(document.body, () => {
+  plugin.request('others.toggle').catch((error) => {
+    console.warn(`milestone: others.toggle failed: ${error.code ?? error.message}`)
   })
 })
 refreshOnPress(document.body, () =>

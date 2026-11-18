@@ -5,9 +5,13 @@ import { test } from 'node:test'
 import { JSDOM } from 'jsdom'
 import { scrollExpandedRows } from '../panel/expand.mjs'
 import { openOnPress } from '../panel/open.mjs'
+import { toggleOthersOnPress } from '../panel/others.mjs'
 import { patchChildren } from '../panel/patch.mjs'
 import { refreshOnPress } from '../panel/refresh.mjs'
 import { selectTabOnPress } from '../panel/tabs.mjs'
+import { buildModel } from '../src/model.mjs'
+import { renderBody } from '../src/render.mjs'
+import { task } from './helpers.mjs'
 
 const panelDir = join(import.meta.dirname, '..', 'panel')
 
@@ -201,6 +205,36 @@ test('pressing a tab pill selects that tab or clears the filter for all', () => 
   root.querySelector('[data-tab="tab-2"]').click()
   root.querySelector('[data-tab=""]').click()
   assert.deepEqual(selected, ['tab-2', null])
+})
+
+test('pressing the heading of the other workspaces asks to fold them, and nothing else does', () => {
+  const root = body('<div class="others"><h2><button type="button" class="fold" data-others-toggle aria-expanded="true"><span class="chev">▾</span>ほか</button></h2><ol class="rows"><li class="row">w</li></ol></div>')
+  let toggled = 0
+  toggleOthersOnPress(root, () => { toggled += 1 })
+  root.querySelector('.rows li').click()
+  assert.equal(toggled, 0)
+  root.querySelector('.chev').click()
+  root.querySelector('[data-others-toggle]').click()
+  assert.equal(toggled, 2)
+})
+
+test('folding the other workspaces patches their rows away and back, keeping the heading button in place', () => {
+  const agents = [{ workspace: 'w1', path: '/other/1', focused: false, state: 'idle' }]
+  const sessions = [{ listId: 'o1', cwd: '/other/1', goal: 'Goal', tasks: [task(1, 'x', 'pending')], updatedAt: 1 }]
+  const workspace = { path: '/work/app', displayName: 'app', agentStates: [] }
+  const root = body()
+  patchChildren(root, renderBody(buildModel(workspace, sessions, agents)))
+  const fold = root.querySelector('.fold')
+  assert.ok(root.querySelector('.rows'))
+
+  patchChildren(root, renderBody(buildModel(workspace, sessions, agents, [], null, false, true)))
+  assert.equal(root.querySelector('.rows'), null)
+  assert.equal(root.querySelector('.fold'), fold, 'the same button, so its arrow can turn')
+  assert.equal(fold.getAttribute('aria-expanded'), 'false')
+
+  patchChildren(root, renderBody(buildModel(workspace, sessions, agents)))
+  assert.ok(root.querySelector('.rows'))
+  assert.equal(fold.getAttribute('aria-expanded'), 'true')
 })
 
 test('pressing the refresh button spins while running and ignores double clicks until done', async () => {
