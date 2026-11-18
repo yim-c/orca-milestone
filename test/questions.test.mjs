@@ -324,3 +324,17 @@ test('the focused workspace lists each agent with its tab, for the status of a s
     { tabId: 'tab-2', state: 'done', background: true }
   ])
 })
+
+test('opencode2 agents are tracked like the other agents, in the status and in the cards', async () => {
+  const { readWorkspaces } = await import('../src/orca-cli.mjs')
+  const reply = 'できました\n```next\n[{"label":"A","prompt":"do a"}]\n```'
+  const agent = (agentType, paneKey) => ({ agentType, state: 'done', paneKey, hasLivePty: true, stateStartedAt: 1, lastAssistantMessage: reply })
+  const worktrees = [{ path: '/a', displayName: 'a', isActive: true, agents: [agent('opencode2', 'tab-1:leaf')] }]
+  const read = await readWorkspaces('orca', async () => ({ ok: true, result: { worktrees } }))
+  assert.deepEqual(read.active.agentStates, ['done'])
+  assert.deepEqual(read.agents.map((entry) => [entry.path, entry.state]), [['/a', 'done']])
+  assert.deepEqual(read.offers.map((offer) => [offer.path, offer.agent]), [['/a', 'opencode2']])
+  // An agent no one tracks stays out.
+  const other = await readWorkspaces('orca', async () => ({ ok: true, result: { worktrees: [{ path: '/a', displayName: 'a', isActive: true, agents: [agent('unknown-agent', 'tab-1:leaf')] }] } }))
+  assert.deepEqual(other.active.agentStates, [])
+})
