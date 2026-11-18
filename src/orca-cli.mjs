@@ -29,7 +29,7 @@ export function runOrca(cli, args, timeout = 10_000) {
   })
 }
 
-const TRACKED_AGENTS = new Set(['claude', 'codex', 'antigravity', 'gemini'])
+const TRACKED_AGENTS = new Set(['claude', 'codex', 'antigravity', 'gemini', 'opencode'])
 
 function mainAgents(worktree) {
   return (worktree.agents ?? []).filter((agent) => TRACKED_AGENTS.has(agent.agentType) && !agent.parentPaneKey)
