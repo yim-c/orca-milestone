@@ -236,9 +236,26 @@ export function createMilestoneWorker({
     publishModel()
   }
 
-  function selectTab(tabId) {
+  /**
+   * Brings a tab to the front in Orca, as the person pressed its chip. Orca does not say which tab
+   * is on screen, so the panel cannot follow the tab; the chip makes the tab follow the panel.
+   * A failure only logs: the chip's filter works without it.
+   */
+  async function showTab(tabId) {
+    try {
+      const { result } = await runArgs(['terminal', 'list', '--json'])
+      const terminal = result?.terminals?.find((candidate) => candidate.tabId === tabId)
+      if (!terminal) return
+      await runArgs(['terminal', 'switch', '--terminal', terminal.handle, '--json'])
+    } catch (error) {
+      orca.log(`milestone: could not show the tab: ${error.message}`)
+    }
+  }
+
+  async function selectTab(tabId) {
     selectedTabId = typeof tabId === 'string' && tabId ? tabId : null
     publishModel()
+    if (selectedTabId) await showTab(selectedTabId)
     return { selectedTabId }
   }
 
