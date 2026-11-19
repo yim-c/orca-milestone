@@ -48,6 +48,18 @@ const REQUEST_RETRY_MS = 30_000
 const FOLLOW_MS = 1500
 const SWITCH_GRACE_MS = 4000
 
+const TEAM_LIST = /^session-([0-9a-f]{8})$/
+const tasksKey = (session) => JSON.stringify(session.tasks.map((task) => [task.subject, task.status]))
+
+// A team's list that Claude emptied is replayed from its lead's transcript, which holds the lead's
+// own tasks: the same milestones as the lead's list. Only the lead's own list is kept then.
+function withoutTeamCopies(sessions) {
+  return sessions.filter((session) => {
+    const prefix = TEAM_LIST.exec(session.listId)?.[1]
+    return !prefix || !sessions.some((other) => other !== session && other.listId.startsWith(`${prefix}-`) && tasksKey(other) === tasksKey(session))
+  })
+}
+
 export function createMilestoneWorker({
   orca,
   home,
@@ -199,7 +211,7 @@ export function createMilestoneWorker({
       })
     }
     sessions.push(...(await readCodexProgress(progressRoot)))
-    return sessions.sort((a, b) => b.updatedAt - a.updatedAt)
+    return withoutTeamCopies(sessions).sort((a, b) => b.updatedAt - a.updatedAt)
   }
 
   function currentTasks(listId, tasks) {
