@@ -120,6 +120,17 @@ test('the badge shows on the session of the focused workspace and on the row of 
   assert.ok(renderBody(working).includes('class="working"') && !renderBody(working).includes('class="idle"'), 'a row at work shows that, not the wait')
 })
 
+test('the background mark of a row is the one of the session it shows, not of the whole workspace', () => {
+  const session = idleSession({ listId: 'other', cwd: '/work/other', tabId: 't9', idleMs: 13 * HOUR })
+  const here = doneAgent({ workspace: 'other', path: '/work/other', focused: false, tabId: 't9' })
+  const row = (agents, shown = session) => buildModel(workspace, [shown], agents).others.rows[0]
+  assert.equal(row([here, { ...here, tabId: 't8', background: true }]).background, false, 'only another tab runs work in the background')
+  assert.equal(row([here, { ...here, tabId: 't8', background: true }]).idle, 13, 'so the wait shows')
+  assert.equal(row([{ ...here, background: true }]).background, true, 'its own tab does')
+  assert.equal(row([here, { ...here, tabId: 't8', background: true }], { ...session, tabId: null }).background, true, 'the workspace stands in when the tab is not known')
+  assert.equal(row([{ ...here, tabId: 't8', background: true }]).background, true, 'and when the tab has no agent')
+})
+
 const SESSION = '6f0b4a52-1c3d-4e8f-9a7b-2d5c8e1f3a90'
 const closable = (extra = {}) => idleSession({ listId: SESSION, source: 'claude', idleAt: 123456, ...extra })
 

@@ -90,6 +90,10 @@ function buildOthers(agents, sessions, workspacePaths) {
     )
     const counts = session ? progress(session.tasks) : { done: 0, total: 0, tasks: [] }
     const idle = session ? idleHours(session, agents) : null
+    // The row shows one session, so work in the background counts only when it is that tab's; the
+    // whole workspace's stands in when the tab of the session is not known or has no agent.
+    const ofTab = session?.tabId ? agents.filter((agent) => agent.path === entry.path && agent.tabId === session.tabId) : []
+    const background = ofTab.length > 0 ? ofTab.some((agent) => agent.background) : entry.background
     return {
       workspace: entry.workspace,
       path: entry.path,
@@ -97,7 +101,7 @@ function buildOthers(agents, sessions, workspacePaths) {
       focused: entry.focused,
       kind: entry.needsUser ? 'attention' : 'idle',
       working: entry.working && !entry.needsUser,
-      background: entry.background && !entry.working && !entry.needsUser,
+      background: background && !entry.working && !entry.needsUser,
       since: entry.since,
       idle,
       close: closeOf(session, idle, counts),
