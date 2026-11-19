@@ -136,6 +136,9 @@ test('a session with the badge can be closed from its list and from its row, and
   assert.equal(close(closable({ idleAt: null })), null)
   assert.equal(close(closable({ idleMs: HOUR })), null, 'not waiting for long')
   assert.equal(close(closable(), [doneAgent({ state: 'working' })]), null, 'Orca says it works')
+  assert.equal(close(closable(), [doneAgent({ background: true })]), null, 'work runs in the background')
+  assert.equal(close(closable(), [doneAgent(), doneAgent({ background: true })]), null, 'another agent of the tab runs work in the background')
+  assert.ok(close(closable(), [doneAgent(), doneAgent({ tabId: 't2', background: true })]), 'the background work of another tab does not count')
   assert.ok(!renderBody(buildModel(workspace, [closable({ idleMs: HOUR })], [doneAgent()])).includes('data-close'))
 
   const other = closable({ cwd: '/work/other', tabId: 't9', idleMs: 13 * HOUR, tasks })
