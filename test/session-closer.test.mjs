@@ -110,6 +110,15 @@ test('a tab that Orca closes by itself is not closed again', async () => {
   assert.ok(!closedTab(calls))
 })
 
+test('a proposal of next steps, or what another tab asks, does not keep a session at rest from closing', async () => {
+  const proposal = harness({ offers: [{ paneKey: 'tab-1:leaf', kind: 'proposal' }] })
+  assert.deepEqual(await proposal.close(), { closed: true })
+  assert.ok(sent(proposal.calls) && closedTab(proposal.calls))
+
+  const other = harness({ offers: [{ paneKey: 'tab-2:leaf', kind: 'question' }] })
+  assert.deepEqual(await other.close(), { closed: true }, 'a question in another tab')
+})
+
 test('a session that did not start in a shell leaves the tab to Orca, and says so when it stays', async () => {
   const noShell = { 50: { pid: 50, ppid: 40, pgid: 50, tpgid: 50, tty: 'ttys1', stat: 'Ss', comm: 'login' } }
   const procs = (extra) => ({ 100: { pid: 100, ppid: 50, pgid: 100, tpgid: 100, tty: 'ttys1', stat: 'R+', comm: 'claude' }, ...extra })
@@ -138,7 +147,9 @@ const REFUSALS = [
   ['Orca calls the agent working', { agents: [{ tabId: 'tab-1', paneKey: 'tab-1:leaf', state: 'working', background: false }] }, 'working'],
   ['work runs in the background', { agents: [{ tabId: 'tab-1', paneKey: 'tab-1:leaf', state: 'done', background: true }] }, 'working'],
   ['another agent of the tab works', { agents: [{ tabId: 'tab-1', paneKey: 'tab-1:leaf', state: 'done', background: false }, { tabId: 'tab-1', paneKey: 'tab-1:two', state: 'working', background: false }] }, 'working'],
-  ['it waits for an answer or a permission', { offers: [{ paneKey: 'tab-1:leaf', kind: 'question' }] }, 'asking'],
+  ['it asks a question', { offers: [{ paneKey: 'tab-1:leaf', kind: 'question' }] }, 'asking'],
+  ['it asks a form of questions', { offers: [{ paneKey: 'tab-1:leaf', kind: 'form' }] }, 'asking'],
+  ['it waits for a permission', { offers: [{ paneKey: 'tab-1:leaf', kind: 'permission' }] }, 'asking'],
   ['no terminal has its pane', { terminals: [{ handle: 'h1', tabId: 'tab-1', leafId: 'elsewhere', ptyId: 'pty-1' }] }, 'no-terminal'],
   ['text is typed in the input box', { claudeScreen: claudeScreen('half written') }, 'draft']
 ]

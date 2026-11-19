@@ -11,6 +11,8 @@ const EXIT_WAIT_MS = 20_000
 const SHELL_WAIT_MS = 1_000
 const GONE_WAIT_MS = 5_000
 const POLL_MS = 500
+// The offers that wait for the person: a question, a form of questions, a call for permission.
+const ASKS = new Set(['question', 'form', 'permission'])
 const SHELLS = /^-?(zsh|bash|fish|sh|dash|ksh)$/
 // A shell prompt ends in one of these. Text typed after the prompt makes the last line end in
 // something else, though a line typed to end in one of them cannot be told apart.
@@ -95,7 +97,8 @@ export function createSessionCloser({ home, run, readSession, readTab, readOrca,
     const inTab = agents.filter((agent) => agent.tabId === tabId)
     if (inTab.length === 0) return refuse('no-tab')
     if (inTab.some((agent) => agent.state !== 'done' || agent.background)) return refuse('working')
-    if (offers.some((offer) => offer.paneKey?.split(':')[0] === tabId)) return refuse('asking')
+    // Only what waits for an answer counts; a proposal of next steps is there after every turn.
+    if (offers.some((offer) => ASKS.has(offer.kind) && offer.paneKey?.split(':')[0] === tabId)) return refuse('asking')
 
     const terminals = await terminalsNow()
     const terminal = inTab.map((agent) => terminals.find((candidate) => isPane(candidate, agent.paneKey))).find(Boolean)
