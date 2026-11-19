@@ -103,6 +103,7 @@ code { font-size: 12px; }
   font: inherit; font-size: 10px; line-height: 16px; color: var(--orca-muted-foreground); background: transparent; cursor: pointer; }
 .close-session:hover { color: var(--orca-foreground); }
 .close-session.armed { color: var(--ms-todo); border-color: var(--ms-todo); font-weight: 700; }
+.close-session.refused { color: var(--ms-todo); border-color: var(--ms-todo); }
 .close-session:disabled { opacity: 0.6; cursor: default; }
 .close-session:focus-visible { outline: 1px solid var(--orca-foreground); outline-offset: 1px; }
 .note { position: fixed; left: 8px; right: 8px; bottom: 8px; margin: 0; padding: 6px 8px; border: 1px solid var(--orca-border);

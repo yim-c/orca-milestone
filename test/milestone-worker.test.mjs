@@ -570,6 +570,20 @@ test('closing a session through the worker checks it again, exits it and closes 
   assert.ok(calls.indexOf('terminal send --terminal h1 --text /exit --enter --json') < calls.indexOf('terminal close --terminal h1 --tab --json'))
 })
 
+test('a refusal is logged with its reason, and a closed session is not', async () => {
+  const refused = await closableWorker()
+  await refused.worker.closeSession({ sessionId: SESSION_A, since: 1 })
+  assert.deepEqual(refused.orca.logs.filter((line) => line.includes('did not close')), [`milestone: did not close session ${SESSION_A.slice(0, 8)}: stale`])
+
+  const closed = await closableWorker()
+  await closed.worker.closeSession({ sessionId: SESSION_A, since: 5000 })
+  assert.ok(!closed.orca.logs.some((line) => line.includes('did not close')))
+
+  const left = await closableWorker({ overrides: { readChildren: async () => [4242] } })
+  await left.worker.closeSession({ sessionId: SESSION_A, since: 5000 })
+  assert.deepEqual(left.orca.logs.filter((line) => line.includes('did not close')), [`milestone: did not close session ${SESSION_A.slice(0, 8)} (it exited, the tab was left): shell-busy`])
+})
+
 test('a close request names a session and the time it was shown, and one session is closed once at a time', async () => {
   let release
   const gate = new Promise((resolve) => {

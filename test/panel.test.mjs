@@ -283,7 +283,7 @@ test('closing takes two presses: the first asks, the second sends what the worke
   await settle()
   assert.equal(button.textContent, '閉じる')
   assert.ok(!button.disabled)
-  assert.equal(root.ownerDocument.querySelector('.note').textContent, 'セッションを閉じました。')
+  assert.equal(root.ownerDocument.querySelector('.note'), null, 'a closed session needs nothing said, its row goes')
 })
 
 test('without unfinished tasks the question does not count them', () => {
@@ -342,15 +342,54 @@ test('while a session is being closed another press sends nothing', async () => 
   await settle()
 })
 
-test('the panel says why nothing was closed, or why the tab stayed, and the note goes away', async () => {
+test('a refusal is told on the pressed button in place of its label, and the label comes back', async () => {
   const cases = [
-    [{ closed: false, reason: 'draft' }, '入力欄に書きかけの文字があるため、閉じませんでした。'],
-    [{ closed: false, reason: 'working' }, 'エージェントが作業中のため、閉じませんでした。'],
-    [{ closed: false, reason: 'stale' }, 'セッションの状態が変わったため、閉じませんでした。'],
+    [{ closed: false, reason: 'draft' }, '入力中の文字があるため中止'],
+    [{ closed: false, reason: 'working' }, '作業中のため中止'],
+    [{ closed: false, reason: 'asking' }, '確認待ちのため中止'],
+    [{ closed: false, reason: 'stale' }, '状態が変わったため中止'],
+    [{ closed: false, reason: 'no-tab' }, 'タブが見つかりません'],
+    [{ closed: false, reason: 'not-exited' }, '終了しなかったため中止'],
+    [{ closed: false, reason: 'something-new' }, '閉じられませんでした']
+  ]
+  for (const [result, text] of cases) {
+    const root = body(closeButton('s1'))
+    const clock = timers()
+    closeOnPress(root, async () => result, clock)
+    const button = root.querySelector('[data-close]')
+    button.click()
+    button.click()
+    await settle()
+    assert.equal(button.textContent, text)
+    assert.ok(button.classList.contains('refused'))
+    assert.ok(!button.disabled)
+    assert.equal(root.ownerDocument.querySelector('.note'), null, 'no note outside the body')
+    clock.run(NOTE_MS)
+    assert.equal(button.textContent, '閉じる', 'the label comes back by itself')
+    assert.ok(!button.classList.contains('refused'))
+  }
+})
+
+test('the refusal stays on the button across the patches of the body, and a new press asks again', async () => {
+  const html = `<div class="row">${closeButton('s1')}</div>`
+  const root = body(html)
+  const clock = timers()
+  const presses = closeOnPress(root, async () => ({ closed: false, reason: 'draft' }), clock)
+  root.querySelector('[data-close]').click()
+  root.querySelector('[data-close]').click()
+  await settle()
+  patchChildren(root, html)
+  presses.restore()
+  assert.equal(root.querySelector('[data-close]').textContent, '入力中の文字があるため中止')
+  root.querySelector('[data-close]').click()
+  assert.equal(root.querySelector('[data-close]').textContent, '本当に閉じる？（未完了 3）', 'a press drops the refusal and asks again')
+})
+
+test('a session that ended with its tab left is told in a note, as its button is gone', async () => {
+  const cases = [
     [{ closed: false, exited: true, reason: 'shell-busy' }, 'セッションは終了しました。タブでほかの処理が動いているため、タブは残しました。'],
     [{ closed: false, exited: true, reason: 'shell-input' }, 'セッションは終了しました。タブに入力中の文字があるかもしれないため、タブは残しました。'],
-    [{ closed: false, exited: true, reason: 'remains' }, 'セッションは終了しました。タブは残っています。'],
-    [{ closed: false, reason: 'something-new' }, '閉じられませんでした。']
+    [{ closed: false, exited: true, reason: 'remains' }, 'セッションは終了しました。タブは残っています。']
   ]
   for (const [result, text] of cases) {
     const root = body(closeButton('s1'))
@@ -361,13 +400,13 @@ test('the panel says why nothing was closed, or why the tab stayed, and the note
     button.click()
     await settle()
     assert.equal(root.ownerDocument.querySelector('.note').textContent, text)
-    assert.equal(button.textContent, '閉じる', 'the button is ready again')
+    assert.equal(button.textContent, '閉じる', 'the button shows no refusal')
     clock.run(NOTE_MS)
     assert.equal(root.ownerDocument.querySelector('.note'), null, 'the note goes away')
   }
 })
 
-test('a request that fails is reported as a failure, and the button is ready again', async () => {
+test('a request that fails is reported on the button as a failure, and the button is ready again', async () => {
   const root = body(closeButton('s1'))
   closeOnPress(root, async () => {
     throw new Error('no connection')
@@ -376,7 +415,7 @@ test('a request that fails is reported as a failure, and the button is ready aga
   button.click()
   button.click()
   await settle()
-  assert.equal(root.ownerDocument.querySelector('.note').textContent, '閉じられませんでした。')
+  assert.equal(button.textContent, '閉じられませんでした')
   assert.ok(!button.disabled)
 })
 

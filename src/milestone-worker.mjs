@@ -431,6 +431,8 @@ export function createMilestoneWorker({
     closing.add(sessionId)
     try {
       const result = await closeIdleSession({ sessionId, since })
+      // A refusal is told on the button, and here, so it can be read without the panel in view.
+      if (!result.closed) orca.log(`milestone: did not close session ${sessionId.slice(0, 8)}${result.exited ? ' (it exited, the tab was left)' : ''}: ${result.reason}`)
       schedule(true)
       return result
     } catch (error) {
