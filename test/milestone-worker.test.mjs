@@ -168,6 +168,32 @@ test('a finished list comes back from the transcript after a restart, and goes w
   assert.ok(!html.includes('<span class="name">done</span>'), 'gone once the session ends')
 })
 
+test('a team list replayed from the lead\'s transcript is not shown beside the lead\'s own list', async () => {
+  const home = await makeHome()
+  const orca = fakeOrca()
+  await writeTranscript(home, SESSION_A, {
+    cwd: '/work/app',
+    prompt: 'Do it',
+    running: false,
+    extra: taskCalls([{ subject: 'Only step', metadata: { goal: 'The goal' } }], [{ taskId: '1', status: 'completed' }])
+  })
+  await markRunning(home, SESSION_A)
+  // Both lists were emptied by Claude, and both name the same transcript: the session's own and its team's.
+  for (const name of [SESSION_A, `session-${SESSION_A.slice(0, 8)}`]) {
+    const dir = await writeTasks(home, name, [])
+    await writeFile(join(dir, '.highwatermark'), '1')
+  }
+  const worker = createMilestoneWorker({
+    orca,
+    home,
+    cli: 'orca',
+    readOrca: async () => ({ active: { path: '/work/app', displayName: 'app', agentStates: [] }, agents: [] }),
+    watchDir: () => {}
+  })
+  await worker.refresh(true)
+  assert.equal(orca.shown().match(/<section data-key/g).length, 1)
+})
+
 test('a failing CLI leaves the panel showing that no workspace is known', async () => {
   const home = await makeHome()
   const orca = fakeOrca()
